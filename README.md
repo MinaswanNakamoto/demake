@@ -19,7 +19,7 @@ You can also clone from git for a more complete example:
 > cd demake/bin
 > chmod +x demake
 > cd ../example
-> demake > Makefile
+> ../bin/demake > Makefile
 > make
 > make build
 ```
