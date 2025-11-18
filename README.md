@@ -6,13 +6,6 @@ Install using the Ruby Gem:
 ```
 gem install demake
 ```
-If you have an existing C application and you want to generate a Makefile for it,
-you might try the gen_application shell script.
-
-```
-./gen_application myapp
-```
-
 It requires a demake directory and application file containing the application
 names followed by depencencies separated by spaces and with a new line to indicate
 a different application. Something like:
@@ -43,4 +36,10 @@ make build
 bin/hello
 bin/goodbye
 
+```
+If you have an existing C application and you want to generate a Makefile for it,
+you might try the gen_application shell script.
+
+```
+./gen_application myapp
 ```
