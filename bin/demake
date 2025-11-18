@@ -174,7 +174,7 @@ END_OF_STRING
 
 default_target = <<-END_OF_STRING
 default :
-        @clear
+\t@clear
 END_OF_STRING
 
 @applications.each do |app|
@@ -192,7 +192,7 @@ end
 
 build_target = <<-END_OF_STRING
 build :
-        @clear
+\t@clear
 END_OF_STRING
 
 @applications.each do |app|
