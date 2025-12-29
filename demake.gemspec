@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name        = "demake"
-  s.version     = "0.0.2"
+  s.version     = "0.0.3"
   s.summary     = "Develop, Decorate and manage Dependencies for C Makefiles easily with a Ruby script."
   s.description = "== Develop, Decorate and manage Dependencies for C Makefiles easily with a Ruby script.
 
@@ -45,7 +45,9 @@ Gem::Specification.new do |s|
   s.email       = "minaswan.nakamoto@onionmail.org"
   s.files       = ["bin/demake"]
   s.executables = ["demake"]
+#  s.add_dependency "pipetext", [">= 0.1.3"]
   s.add_runtime_dependency "pipetext", "~> 0.1", ">= 0.1.3"
   s.homepage    = "https://github.com/MinaswanNakamoto/demake"
   s.license     = "MIT"
+  s.required_ruby_version = ">= 1.8.7"
 end
