@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name        = "demake"
-  s.version     = "0.1.1"
+  s.version     = "0.1.2"
   s.summary     = "Develop, Decorate and manage Dependencies for C (GNU) Makefiles easily with a Ruby script."
   s.description = "== Develop, Decorate and manage Dependencies for C (GNU) Makefiles easily with a Ruby script.
 
