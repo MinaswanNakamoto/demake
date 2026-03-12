@@ -5,7 +5,7 @@
 #
 require 'pipetext'
 
-demake_version = "0.1.1"
+demake_version = "0.1.2"
 
 @silent = false
 @compiler = "gcc"
@@ -15,6 +15,10 @@ demake_version = "0.1.1"
 
 # Raise if you have more cores and a long compile time
 @num_threads = 8
+
+WIDTH           = 75
+BOX_WIDTH       = WIDTH + "\t@echo".length              # To normalize for Makefile format
+SHORT_WIDTH     = BOX_WIDTH - 8
 
 # Where to install binaries
 @prefix = "/usr/local/bin/"
@@ -642,26 +646,26 @@ end
 menu_target = <<-END_OF_STRING
 .PHONY : menu
 menu :
-\t@echo "|]78|=[|70-]|O"
+\t@echo "|]#{BOX_WIDTH}|=[|#{SHORT_WIDTH}-]|O"
 \t@echo "|=!|;!|O"
-\t@echo "|=!|26 Make targets:|;!|O"
+\t@echo "|=!|27 Make targets:|;!|O"
 \t@echo "|=!|;!|O"
-\t@echo "|=!|28 #{@emoji_build} |cbuild|n|;!|O"
-\t@echo "|=!|28 #{@emoji_clean} |cclean|n|;!|O"
-\t@echo "|=!|28 #{@emoji_debug} |cdebug|n|;!|O"
-\t@echo "|=!|28 #{@emoji_install} |cinstall|n|;!|O"
-\t@echo "|=!|28 #{@emoji_uninstall} |cuninstall|n|;!|O"
-\t@echo "|=!|28 #{@emoji_test} |ctest|n|;!|O"
+\t@echo "|=!|29 #{@emoji_build} |cbuild|n|;!|O"
+\t@echo "|=!|29 #{@emoji_clean} |cclean|n|;!|O"
+\t@echo "|=!|29 #{@emoji_debug} |cdebug|n|;!|O"
+\t@echo "|=!|29 #{@emoji_install} |cinstall|n|;!|O"
+\t@echo "|=!|29 #{@emoji_uninstall} |cuninstall|n|;!|O"
+\t@echo "|=!|29 #{@emoji_test} |ctest|n|;!|O"
 \t@echo "|=!|;!|O"
-\t@echo "|=>|70-<|O"
+\t@echo "|=>|#{SHORT_WIDTH}-<|O"
 END_OF_STRING
 @applications.each do |app|
-  menu_target << "\t@echo \"|=!|]78  Executable: bin/|g#{app[0]}|n|;!|O\"\n"
+  menu_target << "\t@echo \"|=!|]#{BOX_WIDTH}  Executable: bin/|O|g#{app[0]}|n|=|;!|O\"\n"
 end
 @build_libraries.each do |lib|
-  menu_target << "\t@echo \"|=!|]78  Library:    bin/|g#{lib[0]}#{@library_extension}|n|;!|O\"\n"
+  menu_target << "\t@echo \"|=!|]#{BOX_WIDTH}  Library:    bin/|O|g#{lib[0]}#{@library_extension}|n|=|;!|O\"\n"
 end
-menu_target << "\t@echo \"|={|70-}|O\"\n"
+menu_target << "\t@echo \"|={|#{SHORT_WIDTH}-}|O\"\n"
 @output << "\n"
 if(@emojis == false)
   strip_emojis!(menu_target)
@@ -675,9 +679,9 @@ END_OF_STRING
 
 @applications.each do |app|
   executable_target = <<-END_OF_STRING
-\t@echo "|=[|70-]|O"
-\t@echo "|]78|=! #{@emoji_build} Building executable: bin/|g#{app[0]}|n|;!|O"
-\t@echo "|={|70-}|O"
+\t@echo "|=[|#{SHORT_WIDTH}-]|O"
+\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_build} Building executable: bin/|O|g#{app[0]}|n|=|;!|O"
+\t@echo "|={|#{SHORT_WIDTH}-}|O"
 \t@$(MAKE) $(BINARY)/#{app[0]}
 END_OF_STRING
   if(@emojis == false)
@@ -688,9 +692,9 @@ end
 
 @build_libraries.each do |lib|
   library_target = <<-END_OF_STRING
-\t@echo "|=[|70-]|O"
-\t@echo "|]78|=! #{@emoji_build} Building library: bin/|g#{lib[0]}|n|;!|O"
-\t@echo "|={|70-}|O"
+\t@echo "|=[|#{SHORT_WIDTH}-]|O"
+\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_build} Building library: bin/|O|g#{lib[0]}|n|=|;!|O"
+\t@echo "|={|#{SHORT_WIDTH}-}|O"
 \t@$(MAKE) $(BINARY)/#{lib[0]}#{@library_extension}
 END_OF_STRING
   if(@emojis == false)
@@ -702,24 +706,29 @@ end
 @output << "\n"
 @output << build_target
 
+def add_dependencies_from_file(dependencies, filename, path)
+  File.readlines(filename).each do |line|
+    if(line =~ /#include \"(.*)\"/)
+      included_filename = @working_directory + '/' + @source_directory + path + $1
+      begin
+        File.open(included_filename)
+        add_dependencies_from_file(dependencies, included_filename, path)
+      rescue Errno::ENOENT
+        notify("|YWARNING|n: included dependency does not exist - Removing #{filename}:#{included_filename}\n")
+        next
+      rescue
+        notify("|YWARNING|n: #{$!} - Removing #{filename}:#{included_filename}\n")
+        next
+      end
+      dependencies << "\t\\\n\t$(SOURCE)#{path}#{$1}"
+    end
+  end
+end
+
 def add_dependencies(filename, path)
   begin
     dependencies = String.new
-    File.readlines(filename).each do |line|
-      if(line =~ /^#include \"(.*)\"/)
-        file_name = @working_directory + '/' + @source_directory + path + $1
-        begin
-          File.open(file_name)
-        rescue Errno::ENOENT
-          notify("|YWARNING|n: included dependency does not exist - Removing #{filename}:#{file_name}\n")
-          next
-        rescue
-          notify("|YWARNING|n: #{$!} - Removing #{filename}:#{file_name}\n")
-          next
-        end
-        dependencies << "\t\\\n\t$(SOURCE)#{path}#{$1}"
-      end
-    end
+    add_dependencies_from_file(dependencies, filename, path)
     if(dependencies != "")
       dependency_targets = <<-END_OF_STRING
 # Dependencies
@@ -766,7 +775,7 @@ def add_all_dependencies(directory, path)
   Dir.entries(directory).each do |e|
     if(e != '.' && e != '..')
       Dir.chdir(directory) do
-        if(File.directory?(e) == false)
+        if(File.directory?(e) == false && (e =~ /.c$/ || e =~ /.cpp$/))
           add_dependencies(e, path)
         end
       end
@@ -781,9 +790,9 @@ counter = 0
   counter += 1
   executable_target = <<-END_OF_STRING
 $(BINARY)/#{app[0]} : $(OL#{counter})
-\t@echo "|=[|70-]|O"
-\t@echo "|]78|=! #{@emoji_link} Linking Files...|O bin/|g#{app[0]}|=|n|;!|O"
-\t@echo "|={|70-}|O"
+\t@echo "|=[|#{SHORT_WIDTH}-]|O"
+\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_link} Linking Files...|O bin/|g#{app[0]}|=|n|;!|O"
+\t@echo "|={|#{SHORT_WIDTH}-}|O"
 ifeq '$(OS)' 'Windows_NT'
 \t@test -d $(BINARY) |||| mkdir $(BINARY)
 else
@@ -808,9 +817,9 @@ end
   counter += 1
   library_target = <<-END_OF_STRING
 $(BINARY)/#{lib[0]}#{@library_extension} : $(OL#{counter})
-\t@echo "|=[|70-]|O"
-\t@echo "|]78|=! #{@emoji_link} Linking Files...|O bin/|g#{lib[0]}#{@library_extension}|=|n|;!|O"
-\t@echo "|={|70-}|O"
+\t@echo "|=[|#{SHORT_WIDTH}-]|O"
+\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_link} Linking Files...|O bin/|g#{lib[0]}#{@library_extension}|=|n|;!|O"
+\t@echo "|={|#{SHORT_WIDTH}-}|O"
 ifeq '$(OS)' 'Windows_NT'
 \t@test -d $(BINARY) |||| mkdir $(BINARY)
 else
@@ -831,9 +840,9 @@ counter = 0
   counter += 1
   debug_executable_target = <<-END_OF_STRING
 $(BINARY)/#{app[0]}_debug : $(DOL#{counter})
-\t@echo "|=[|70-]|O"
-\t@echo "|]78|=! #{@emoji_debug} #{@emoji_link} Linking Files...|O bin/|g#{app[0]}_debug|=|n|;!|O"
-\t@echo "|={|70-}|O"
+\t@echo "|=[|#{SHORT_WIDTH}-]|O"
+\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_debug} #{@emoji_link} Linking Files...|O bin/|g#{app[0]}_debug|=|n|;!|O"
+\t@echo "|={|#{SHORT_WIDTH}-}|O"
 ifeq '$(OS)' 'Windows_NT'
 \t@test -d $(BINARY) |||| mkdir $(BINARY)
 else
@@ -852,9 +861,9 @@ end
   counter += 1
   debug_library_target = <<-END_OF_STRING
 $(BINARY)/#{lib[0]}_debug#{@library_extension} : $(DOL#{counter})
-\t@echo "|=[|70-]|O"
-\t@echo "|]78|=! #{@emoji_debug} #{@emoji_link} Linking Files...|O bin/|g#{lib[0]}_debug#{@library_extension}|=|n|;!|O"
-\t@echo "|={|70-}|O"
+\t@echo "|=[|#{SHORT_WIDTH}-]|O"
+\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_debug} #{@emoji_link} Linking Files...|O bin/|g#{lib[0]}_debug#{@library_extension}|=|n|;!|O"
+\t@echo "|={|#{SHORT_WIDTH}-}|O"
 ifeq '$(OS)' 'Windows_NT'
 \t@test -d $(BINARY) |||| mkdir $(BINARY)
 else
@@ -916,9 +925,9 @@ END_OF_STRING
 
 @applications.each do |app|
   executable_debug_target = <<-END_OF_STRING
-\t@echo "|=[|70-]|O"
-\t@echo "|]78|=! #{@emoji_debug} #{@emoji_build} |nBuilding executable:|O bin/|g#{app[0]}_debug|=|n|;!|O"
-\t@echo "|={|70-}|O"
+\t@echo "|=[|#{SHORT_WIDTH}-]|O"
+\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_debug} #{@emoji_build} |nBuilding executable:|O bin/|g#{app[0]}_debug|=|n|;!|O"
+\t@echo "|={|#{SHORT_WIDTH}-}|O"
 \t@$(MAKE) $(BINARY)/#{app[0]}_debug
 END_OF_STRING
   if(@emojis == false)
@@ -929,9 +938,9 @@ end
 
 @build_libraries.each do |lib|
   library_debug_target = <<-END_OF_STRING
-\t@echo "|=[|70-]|O"
-\t@echo "|]78|=! #{@emoji_debug} #{@emoji_build} Building library:|O bin/|g#{lib[0]}_debug#{@library_extension}|=|n|;!|O"
-\t@echo "|={|70-}|O"
+\t@echo "|=[|#{SHORT_WIDTH}-]|O"
+\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_debug} #{@emoji_build} Building library:|O bin/|g#{lib[0]}_debug#{@library_extension}|=|n|;!|O"
+\t@echo "|={|#{SHORT_WIDTH}-}|O"
 \t@$(MAKE) $(BINARY)/#{lib[0]}_debug#{@library_extension}
 END_OF_STRING
   if(@emojis == false)
