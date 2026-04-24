@@ -29,7 +29,9 @@ echo "goodbye string" >> demake/applications
 demake
 ```
 For customization, optionally include (see example):
-demake/settings.rb, demake/test-target.rb, demake/install-target.rb
+demake/settings.rb, demake/test-target.rb, demake/install-target.rb,
+demake/license
+
 
 The output of the command by itself is a (GNU style) file named Makefile:
 ```
@@ -51,3 +53,4 @@ you might try the gen_application shell script.
 ```
 ./gen_application myapp
 ```
+
