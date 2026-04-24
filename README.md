@@ -26,14 +26,14 @@ a different application. Something like (from the example):
 mkdir demake
 echo "hello string" > demake/applications
 echo "goodbye string" >> demake/applications
-demake > Makefile
+demake
 ```
 For customization, optionally include (see example):
 demake/settings.rb, demake/test-target.rb, demake/install-target.rb
 
-The output of the command by itself is a (GNU style) Makefile:
+The output of the command by itself is a (GNU style) file named Makefile:
 ```
-demake > Makefile
+demake
 ```
 
 You can also clone from git for a more complete example:
