@@ -1,11 +1,12 @@
 #!/usr/bin/env ruby
 #
-# demake - Single self-contained executeable script which uses Ruby to generate decorated make files
+# demake - Executeable script which uses Ruby to generate decorated make files
 #          for multiple related applications.
 #
+require 'rbconfig'      # Needed by older versions of Ruby
 require 'pipetext'
 
-demake_version = "0.1.2"
+demake_version = "0.2.0"
 
 @silent = false
 @compiler = "gcc"
@@ -13,6 +14,8 @@ demake_version = "0.1.2"
 #@compiler = "arm-none-eabi-gcc"
 #@compiler = "arm-linux-gnu-gcc"
 
+@strip = true
+@debug_enabled = true
 # Raise if you have more cores and a long compile time
 @num_threads = 8
 
@@ -20,15 +23,16 @@ WIDTH           = 75
 BOX_WIDTH       = WIDTH + "\t@echo".length              # To normalize for Makefile format
 SHORT_WIDTH     = BOX_WIDTH - 8
 
-# Where to install binaries
+# Where to install binaries / libraries
 @prefix = "/usr/local/bin/"
-@library_prefix = "/usr/local/lib64/"
+@library_prefix = "/usr/local/lib/"
 
 # Contains code, does not get touched
 @source_directory = "src"
 
-# Both of these get completely blown away with make clean
+# These get completely blown away with make clean
 @binary_directory = "bin"
+@library_directory = "lib"
 @object_directory = "obj"
 
 @working_directory = Dir.pwd
@@ -38,6 +42,8 @@ SHORT_WIDTH     = BOX_WIDTH - 8
 @replace_with = "|mo|n"
 # The space at the end helps with some fonts that cut the emoji with the next letter
 @emoji_build = "|Y|[construction]|n "
+@emoji_library = "|Y|[books]|n "
+@emoji_license = "|b|[scroll]|n "
 @emoji_clean = "|r|[fire]|n "
 @emoji_debug = "|n|[bug] "
 @emoji_install = "|s|[nut and bolt]|n "
@@ -51,18 +57,46 @@ SHORT_WIDTH     = BOX_WIDTH - 8
 @pipe = Class.new.extend(PipeText)
 
 @flags = String.new
-@debug_flags = "-DDEBUG -g -Wall -Wextra -Wunused-variable -Wundef -Wconversion -Wshadow -Wcast-qual -Wwrite-strings "
+@optimize_flags = String.new
+@compiler_flags = String.new
+@library_compiler_flags = String.new
+@linker_flags = String.new
+@debug_flags = String.new
 @linux_flags = String.new
 @x86_64_flags = String.new
 @aarch64_flags = String.new
+@riscv_flags = String.new
 @darwin_flags = String.new
 @windows_flags = String.new
 @freebsd_flags = String.new
+@library_linker_flags = String.new
 @libraries = String.new
+@linker_libraries = String.new
+@library_linker_libraries = String.new
 @raw_binary_files = String.new
+@ruby_headers = String.new
+@ruby_library = String.new
+if(RbConfig::CONFIG["rubyhdrdir"] != nil &&
+    RbConfig::CONFIG["rubyarchhdrdir"] != nil)
+  @ruby_headers = "-I" + RbConfig::CONFIG["rubyhdrdir"] +
+                  " -I" + RbConfig::CONFIG["rubyarchhdrdir"]
+elsif(RbConfig::CONFIG["rubyhdrdir"] != nil)
+  @ruby_headers = "-I" + RbConfig::CONFIG["rubyhdrdir"]
+elsif(RbConfig::CONFIG["rubyarchhdrdir"] != nil)
+  @ruby_headers = " -I" + RbConfig::CONFIG["rubyarchhdrdir"]
+else
+  @ruby_headers = "-I" + RbConfig::CONFIG["includedir"]
+end
+if(RbConfig::CONFIG["LIBRUBYARG"] != nil)
+  @ruby_library = RbConfig::CONFIG["LIBRUBYARG"] +
+      " -Wl,-rpath," + RbConfig::CONFIG["LIBRUBYARG"]
+end
+@page_debug = false
 
 def strip_emojis!(string)
   string.gsub!(@emoji_build, @replace_with)
+  string.gsub!(@emoji_library, @replace_with)
+  string.gsub!(@emoji_license, @replace_with)
   string.gsub!(@emoji_clean, @replace_with)
   string.gsub!(@emoji_debug, @replace_with)
   string.gsub!(@emoji_install, @replace_with)
@@ -83,42 +117,32 @@ def notify(string)
   STDERR.puts(@pipe.pipetext(string))
 end
 
-# Used by both example and oreo to show options
-settingsrb = <<-END_OF_STRING
-# Uncomment to use / override
-#
-=begin
-@silent = false
-@compiler = "clang"
-@prefix = "/usr/local/bin/"
-@library_prefix = "/usr/lib64/"
-@emojis = false
-@replace_with = "|b*|n"
-@libraries << "-lc"
-@flags << "-ansi -pedantic -D_DEFAULT_SOURCE"
-@linux_flags << "-static"       # clang
-@linux_flags << "-static -static-libgcc"
-@x86_64_flags << "-msse2 -mssse3 -msse4.1 -msha"
-@aarch64_flags << "-march=armv8-a+crypto"
-@windows_flags << ""
-@freebsd_flags << ""
-@darwin_flags << "-bundle"
-@debug_flags << "-Wpedantic -Wdeprecated-declarations -Wdiv-by-zero " +
-                "-Wimplicit-function-declaration -Wimplicit-int " +
-                "-Wpointer-arith -Wwrite-strings -Wold-style-definition " +
-                "-Wmissing-noreturn -Wno-cast-function-type " +
-                "-Wno-constant-logical-operand -Wno-long-long " +
-                "-Wno-missing-field-initializers -Wno-overlength-strings " +
-                "-Wno-packed-bitfield-compat -Wno-parentheses-equality " +
-                "-Wno-self-assign -Wno-tautological-compare " +
-                "-Wno-unused-parameter -Wno-unused-value " +
-                "-Wsuggest-attribute=format -Wsuggest-attribute=noreturn"
-@flags = "-g -Wall"
-# No default flags (use only flags in the line above)
-$flags_override = true
-=end
-notify("#{@emoji_success} |gdemake/settings.rb is present|n")
-END_OF_STRING
+@lib_data = File.join(File.expand_path("../..", __FILE__), "lib", "data")
+@lib_dir = File.join(File.expand_path("../..", __FILE__), "lib")
+
+if(ARGV[0] == "help" || ARGV[0] == "--help" || ARGV[0] == "-h" ||
+    ARGV[0] == "?" || ARGV[0] == "-?")
+  program = File.basename($0)
+  notify("Command syntax:\n\n")
+  notify("|y#{program}|n          - Create or update Makefile\n")
+  notify("|y#{program} example|n  - Create an example application\n")
+  notify("|y#{program} oreo|n     - Create a different sample application\n\n")
+  exit!
+end
+
+def file_open_write_close(filename, data)
+  File.open(filename, 'w') do |f|
+    f.write(data)
+  end
+end
+
+def file_open_read_close(filename)
+  data = String.new
+  File.open(filename, 'r') do |f|
+    data = f.read
+  end
+  return(data)
+end
 
 @example = false
 if(ARGV[0] =~ /^example$/)
@@ -128,92 +152,39 @@ if(ARGV[0] =~ /^example$/)
     exit!
   end
   @example = true
-  # C code files used by the example
-  helloc = <<-END_OF_STRING
-/*
-   The most basic multiple executable example using a shared object/header file.
-
-   hello.c will generate an executable named hello which that prints hello, world
-*/
-#include "string/string.h"
-
-int main(void)
-{
-  out("hello, world");
-  return 0;
-}
-END_OF_STRING
-
-  goodbyec = <<-END_OF_STRING
-/*
-   The most basic multiple executable example using a shared object/header file.
-
-   goodbye.c will generate an executable named hello which that prints goodbye, world
-*/
-#include "string/string.h"
-
-int main(void)
-{
-  out("goodbye, world");
-  return 0;
-}
-END_OF_STRING
-
-  stringh = <<-END_OF_STRING
-/*
-   The most basic multiple executable example using a shared object/header file.
-
-   string.h includes a simple shared function named out which prints output
-*/
-
-void out(const char *in);
-END_OF_STRING
-
-  stringc = <<-END_OF_STRING
-/*
-   The most basic multiple executable example using a shared object/header file.
-
-   string.c creates a simple shared function named out which prints output
-*/
-#include <stdio.h>
-#include "string.h"
-
-void out(const char *in)
-{
-  printf("%s\\n", in);
-}
-END_OF_STRING
-
-  testtargetrb = <<-END_OF_STRING
-test_target << "\\t@echo\\n"
-test_target << "\\t@echo \\"|YTesting command hello:|n\\"\\n"
-test_target << "\\tbin/hello\\n"
-test_target << "\\t@echo \\"|YTesting command goodbye:|n\\"\\n"
-test_target << "\\tbin/goodbye\\n"
-END_OF_STRING
+  # Code files used by the example
+  example_settings_rb = file_open_read_close(@lib_data + '/example/demake/settings.rb')
+  hello_c = file_open_read_close(@lib_data + '/example/src/hello.c')
+  goodbye_c = file_open_read_close(@lib_data + '/example/src/goodbye.c')
+  string_h = file_open_read_close(@lib_data + '/example/src/string/string.h')
+  string_c = file_open_read_close(@lib_data + '/example/src/string/string.c')
+  testtarget_rb = file_open_read_close(@lib_data + '/example/demake/test-target.rb')
+  license = file_open_read_close(@lib_data + '/example/demake/license')
 
   Dir.mkdir('example')
   notify("#{@emoji_success} Created directory: |gexample|n |[open file folder]\n")
   Dir.mkdir('example/src')
   notify("#{@emoji_success} Created directory: |gexample|n/|gsrc|n |[open file folder]\n")
-  File.open('example/src/hello.c', 'w').write(helloc)
+  file_open_write_close('example/src/hello.c', hello_c)
   notify("#{@emoji_success} Created file: |gexample|n/|gsrc|n/|yhello.c|n |[page facing up]\n")
-  File.open('example/src/goodbye.c', 'w').write(goodbyec)
+  file_open_write_close('example/src/goodbye.c', goodbye_c)
   notify("#{@emoji_success} Created file: |gexample|n/|gsrc|n/|ygoodbye.c|n |[page facing up]\n")
   Dir.mkdir('example/src/string')
   notify("#{@emoji_success} Created directory: |gexample|n/|gsrc|n/|gstring|n |[open file folder]\n")
-  File.open('example/src/string/string.h', 'w').write(stringh)
+  file_open_write_close('example/src/string/string.h', string_h)
   notify("#{@emoji_success} Created file: |gexample|n/|gsrc|n/|gstring|n/|ystring.h|n |[page facing up]\n")
-  File.open('example/src/string/string.c', 'w').write(stringc)
+  file_open_write_close('example/src/string/string.c', string_c)
   notify("#{@emoji_success} Created file: |gexample|n/|gsrc|n/|gstring|n/|ystring.c|n |[page facing up]\n")
   Dir.mkdir('example/demake')
   notify("#{@emoji_success} Created directory: |gexample|n/|gdemake|n |[open file folder]\n")
-  File.open('example/demake/applications', 'w').write("hello string\ngoodbye string\n")
+  file_open_write_close('example/demake/applications', "hello string\ngoodbye string\n")
   notify("#{@emoji_success} Created file: |gexample|n/|gdemake|n/|yapplications|n |[page facing up]\n")
-  File.open('example/demake/settings.rb', 'w').write(settingsrb)
+  file_open_write_close('example/demake/settings.rb', example_settings_rb)
   notify("#{@emoji_success} Created file: |gexample|n/|gdemake|n/|ysettings.rb|n |[page facing up]\n")
-  File.open('example/demake/test-target.rb', 'w').write(testtargetrb)
+  file_open_write_close('example/demake/test-target.rb', testtarget_rb)
   notify("#{@emoji_success} Created file: |gexample|n/|gdemake|n/|ytest-target.rb|n |[page facing up]\n")
+  file_open_write_close('example/demake/license', license)
+  notify("#{@emoji_success} Created file: |gexample|n/|gdemake|n/|ylicense|n |[page facing up]\n")
   Dir.chdir('example')
   @working_directory = Dir.pwd
 end
@@ -226,176 +197,78 @@ if(ARGV[0] =~ /^oreo$/)
     exit!
   end
   @oreo = true
-  # C code file used by oreo
-  oreoc = <<-END_OF_STRING
-/*
-   oreo.c -- A simple c program that reads data piped in, issued as arguments or from a file and echos output
-
-   Program main entry point: main/_start
-*/
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#ifndef __WIN32__
-#include <sys/ioctl.h>
-#else
-#include <windows.h>
-#endif
-
-#define FALSE   0
-#define TRUE    1
-
-#define READ_BUFFER_SIZE 4096
-
-/* Read all the text from a file and put it into a string */
-char *read_file(FILE *file, unsigned int *total_bytes)
-{
-  size_t bytes = 0, count = 0;
-  char buffer[READ_BUFFER_SIZE + 1], *text = NULL;
-
-  *total_bytes = 0;
-
-  if(file == NULL)
-    return NULL;
-
-  bytes = fread(buffer, sizeof(char), READ_BUFFER_SIZE, file);
-  while(bytes) {
-    if(text) {
-      text = realloc(text, *total_bytes + bytes + 1);
-      count = 0;
-      while(count < bytes) {
-        *(text + *total_bytes + count) = buffer[count];
-        count++;
-      }
-    } else {
-      text = calloc(bytes + 1, sizeof(char));
-      count = 0;
-      while(count < bytes) {
-        *(text + *total_bytes + count) = buffer[count];
-        count++;
-      }
-    }
-    *total_bytes += (unsigned int)bytes;
-    *(text + *total_bytes) = '\\0';
-    bytes = fread(buffer, sizeof(char), READ_BUFFER_SIZE, file);
-  }
-  return text;
-}
-
-int main(int argc, char **argv)
-{
-  FILE *file = NULL;
-  unsigned int total_bytes = 0, l = 0;
-  int n = 0;
-  unsigned char *string = NULL, displayed = FALSE;
-#ifdef __WIN32__
-  HANDLE stdin_handle = GetStdHandle(STD_INPUT_HANDLE);
-  DWORD bytes;
-
-  if(PeekNamedPipe(stdin_handle, NULL, 0, NULL, &bytes, NULL) && bytes > 0) {
-#else
-  if(ioctl(0, FIONREAD, &n) == 0 && n > 0) {
-#endif
-    string = (unsigned char *)read_file(stdin, &total_bytes);
-#ifdef DEBUG
-    printf("From stdin:\\r\\n");
-#endif
-    printf("oreo: %s\\r\\n", string);
-    free(string);
-    string = NULL;
-    displayed = TRUE;
-  }
-  if(argv[1] != NULL) {
-    file = fopen(argv[1], "r");
-    if(file == NULL) {
-      /* We need to manually recreate the command input based on arguments with spaces  */
-      for(n = 1; n < argc; n++) {
-        if(string != NULL) {
-          l = (unsigned int)strlen(argv[n]);
-          total_bytes += l + 1;                                 /* +1 for space         */
-          string = realloc(string, (size_t)total_bytes + 1);    /* +1 for \\0            */
-          strncat((char *)string, " ", (size_t)2);              /* 2 for space and \\0   */
-          strncat((char *)string, argv[n], l);
-        } else {
-          total_bytes = (unsigned int)strlen(argv[n]);
-          string = calloc(total_bytes + 1, sizeof(char));       /* +1 for \\0            */
-          strncpy((char *)string, argv[n], total_bytes);
-        }
-      }
-#ifdef DEBUG
-      printf("From argument:\\r\\n");
-#endif
-      printf("oreo: %s\\r\\n", string);
-      free(string);
-      string = NULL;
-    } else {
-#ifdef DEBUG
-      printf("From file: %s\\r\\n", argv[1]);
-#endif
-      string = (unsigned char *)read_file(file, &total_bytes);
-      printf("oreo: %s\\r\\n", string);
-      free(string);
-      string = NULL;
-    }
-  } else if(!displayed) {
-#ifdef DEBUG
-    printf("No input provided.\\r\\n");
-#endif
-  }
-
-  return 0;
-}
-END_OF_STRING
-
-  testtargetrb = <<-END_OF_STRING
-test_target << "\\t@echo\\n"
-test_target << "\\t@echo \\"|YBasic functional testing of command oreo:|n\\"\\n"
-test_target << "\\tbin/oreo Test 1\\n"
-test_target << "\\techo -n \\"Test 2\\" || bin/oreo\\n"
-test_target << "\\techo -n \\"Test 3\\" || bin/oreo Test 4\\n"
-END_OF_STRING
+  # Code file used by oreo
+  oreo_settings_rb = file_open_read_close(@lib_data + '/oreo/demake/settings.rb')
+  defines_h = file_open_read_close(@lib_data + '/oreo/src/defines.h')
+  typedefs_h = file_open_read_close(@lib_data + '/oreo/src/typedefs.h')
+  fast_read_file_h = file_open_read_close(@lib_data + '/oreo/src/fast_read_file.h')
+  oreo_c = file_open_read_close(@lib_data + '/oreo/src/oreo.c')
+  testtarget_rb = file_open_read_close(@lib_data + '/oreo/demake/test-target.rb')
+  oreo_test_txt = file_open_read_close(@lib_data + '/oreo/oreo_test.txt')
+  license = file_open_read_close(@lib_data + '/oreo/demake/license')
 
   Dir.mkdir('oreo')
   notify("#{@emoji_success} Created directory: |goreo|n |[open file folder]\n")
   Dir.mkdir('oreo/src')
   notify("#{@emoji_success} Created directory: |goreo|n/|gsrc|n |[open file folder]\n")
-  File.open('oreo/src/oreo.c', 'w').write(oreoc)
+  file_open_write_close('oreo/src/defines.h', defines_h)
+  notify("#{@emoji_success} Created file: |goreo|n/|gsrc|n/|ydefines.h|n |[page facing up]\n")
+  file_open_write_close('oreo/src/typedefs.h', typedefs_h)
+  notify("#{@emoji_success} Created file: |goreo|n/|gsrc|n/|ytypedefs.h|n |[page facing up]\n")
+  file_open_write_close('oreo/src/fast_read_file.h', fast_read_file_h)
+  notify("#{@emoji_success} Created file: |goreo|n/|gsrc|n/|yfast_read_file.h|n |[page facing up]\n")
+  file_open_write_close('oreo/src/oreo.c', oreo_c)
   notify("#{@emoji_success} Created file: |goreo|n/|gsrc|n/|yoreo.c|n |[page facing up]\n")
   Dir.mkdir('oreo/demake')
   notify("#{@emoji_success} Created directory: |goreo|n/|gdemake|n |[open file folder]\n")
-  File.open('oreo/demake/applications', 'w').write("oreo\n")
+  file_open_write_close('oreo/demake/applications', "oreo\n")
   notify("#{@emoji_success} Created file: |goreo|n/|gdemake|n/|yapplications|n |[page facing up]\n")
-  File.open('oreo/demake/settings.rb', 'w').write(settingsrb)
+  file_open_write_close('oreo/demake/settings.rb', oreo_settings_rb)
   notify("#{@emoji_success} Created file: |goreo|n/|gdemake|n/|ysettings.rb|n |[page facing up]\n")
-  File.open('oreo/demake/test-target.rb', 'w').write(testtargetrb)
+  file_open_write_close('oreo/demake/test-target.rb', testtarget_rb)
   notify("#{@emoji_success} Created file: |goreo|n/|gdemake|n/|ytest-target.rb|n |[page facing up]\n")
+  file_open_write_close('oreo/demake/license', license)
+  notify("#{@emoji_success} Created file: |goreo|n/|gdemake|n/|ylicense|n |[page facing up]\n")
   Dir.chdir('oreo')
+  file_open_write_close('oreo_test.txt', oreo_test_txt)
+  notify("#{@emoji_success} Created file: |goreo|n/|yoreo_text.txt|n |[page facing up]\n")
   @working_directory = Dir.pwd
 end
 
 @applications = Hash.new
 @build_libraries = Hash.new
 
-if(@example == false && @oreo == false)
-  # Check for settings override
-  begin
-    code = File.open('demake/settings.rb').read
-    if(@emojis == false)
-      strip_emojis!(code)
-    end
-    eval code
-  rescue Errno::ENOENT
-  rescue
-    notify("\n|YWARNING|n: #{$!}\n\n")
+# Check for settings / default override
+begin
+  if(@example == false && @oreo == false)
+    code = file_open_read_close('demake/settings.rb')
+  elsif(@example == true)
+    code = example_settings_rb
+  elsif(@oreo == true)
+    code = oreo_settings_rb
   end
+  if(@emojis == false)
+    strip_emojis!(code)
+  end
+  eval code
+rescue Errno::ENOENT
+rescue
+  notify("\n|YWARNING|n: #{$!}\n\n")
+end
 
+if(@library_compiler_flags =~ /-static/)
+  @library_extension = '.a'
+else
+  @library_extension = '.so'
+end
+
+if(@example == false && @oreo == false)
   # Applications to build
   no_applications_file = true
   begin
     # The expected format is the application followed by a list of its dependencies
     # all on the same line separated by space, : or tab and # for comments
-    application_and_dependencies = File.open('demake/applications').read.split(/\n/)
+    application_and_dependencies = file_open_read_close('demake/applications').split(/\n/)
     no_applications_file = false
     application_and_dependencies.each do |app|
       if(app !~ /^#/ && app !~ /^[ \t]*#/)
@@ -416,7 +289,7 @@ if(@example == false && @oreo == false)
   begin
     # The expected format is the application followed by a list of its dependencies
     # all on the same line separated by space, : or tab and # for comments
-    libraries_and_dependencies = File.open('demake/libraries').read.split(/\n/)
+    libraries_and_dependencies = file_open_read_close('demake/libraries').split(/\n/)
     no_libraries_file = false
     libraries_and_dependencies.each do |lib|
       if(lib !~ /^#/ && lib !~ /^[ \t]*#/)
@@ -467,10 +340,11 @@ CC = #{@compiler}
 OS := $(shell uname)
 PROCESSOR := $(shell uname -p)
 MACHINE := $(shell uname -m)
+STRIP := strip
+STRIP_ARGS := --strip-unneeded
 PREFIX = #{@prefix}
 LIBRARY_PREFIX = #{@library_prefix}
 END_OF_STRING
-
 @output << compiler_settings
 
 compiler_flags = "FLAGS = #{@flags}\n"
@@ -488,6 +362,12 @@ if(@windows_flags != "")
   compiler_flags << "ifeq '$(OS)' 'Windows_NT'\n"
   compiler_flags << "  FLAGS += #{@windows_flags}\n"
   compiler_flags << "endif\n"
+  compiler_flags << "ifneq ($(filter CYGWIN_NT%,$(OS)),)\n"
+  compiler_flags << "  FLAGS += #{@windows_flags}\n"
+  compiler_flags << "endif\n"
+  compiler_flags << "ifneq ($(filter MINGW64_NT%,$(OS)),)\n"
+  compiler_flags << "  FLAGS += #{@windows_flags}\n"
+  compiler_flags << "endif\n"
 end
 if(@darwin_flags != "")
   compiler_flags << "ifeq '$(OS)' 'Darwin'\n"
@@ -499,40 +379,40 @@ if(@aarch64_flags != "")
   compiler_flags << "  FLAGS += #{@aarch64_flags}\n"
   compiler_flags << "endif\n"
 end
+if(@riscv64_flags != "")
+  compiler_flags << "ifeq '$(MACHINE)' 'riscv64'\n"
+  compiler_flags << "  FLAGS += #{@riscv64_flags}\n"
+  compiler_flags << "endif\n"
+end
 if(@x86_64_flags != "")
   compiler_flags << "ifeq '$(MACHINE)' 'x86_64'\n"
+  compiler_flags << "  FLAGS += #{@x86_64_flags}\n"
+  compiler_flags << "endif\n"
+  compiler_flags << "ifeq '$(MACHINE)' 'amd64'\n"
   compiler_flags << "  FLAGS += #{@x86_64_flags}\n"
   compiler_flags << "endif\n"
 end
 compiler_flags += <<-END_OF_STRING
 DEBUG_FLAGS = #{@debug_flags}
-FLAGS += -O2
-CFLAGS = $(FLAGS)
+OFLAGS = #{@optimize_flags}
+CFLAGS = #{@compiler_flags} $(FLAGS)
+LDFLAGS = #{@linker_flags}
+LIB_CFLAGS = #{@library_compiler_flags} $(FLAGS)
+LIB_LDFLAGS = #{@library_linker_flags}
+BUILD_FLAGS = $(CFLAGS)
 END_OF_STRING
-if(defined?($flags_override))
-  notify("|ROverriding compiler flags|n:")
-  notify("|RFLAGS|n = #{@flags}")
-  compiler_flags = "FLAGS = #{@flags}\nCFLAGS = $(FLAGS)\n"
-end
 @output << compiler_flags
-
-if(compiler_flags =~ /-static/)
-  @library_extension = '.a'
-else
-  @library_extension = '.so'
-end
 
 compiler_directories = <<-END_OF_STRING
 LIBS = #{@libraries}
+LDLIBS = $(LIBS) #{@linker_libraries}
+LIB_LDLIBS = $(LIBS) #{@library_linker_libraries}
 BINARY = #{@binary_directory}
+LIBRARY = #{@library_directory}
 SOURCE = #{@source_directory}
 OBJECT = #{@object_directory}
 END_OF_STRING
-
 @output << compiler_directories
-
-#SOURCES = $(wildcard $(SOURCE)/*.c $(SOURCE)/*.h)
-#OBJECTS = $(patsubst $(SOURCE)/%.c, $(OBJECT)/%.o, $(SOURCES))
 
 counter = 0
 file_list = String.new
@@ -643,28 +523,81 @@ debug_file_list = String.new
   @output << debug_file_list
 end
 
+@output << "\nRUBY := $(shell command -v ruby 2> /dev/null)\n\n"
+
+license = file_open_read_close('demake/license')
+if(license != "")
+  longest_line = 0
+  license.lines.each do |l|
+    if(l.length > longest_line)
+      longest_line = l.length
+    end
+  end
+  line_length = longest_line + 2
+  include_license = "\n\t@echo \"|=!|29 #{@emoji_license} |blicense|n|;!|O\""
+  @output << "define LICENSE\n"
+  text = license.gsub(/^/, "|-!|O ").gsub(/\n/, "|;|-!|O\n")
+  text = text.sub("|-!|O", "|-!|O|b").sub("|;|-!|O\n", "|n|;|-!|O\n")
+  @output << @pipe.pipetext("|]#{line_length}\n|-[|#{line_length - 1}-]|O\n" +
+      "#{text}|-{|#{line_length - 1}-}|O\n\n")
+  @output << "endef\n"
+  @output << "export LICENSE\n"
+  @output << "define LICENSE_FILE\n"
+  @output << license
+  @output << "endef\n"
+  @output << "export LICENSE_FILE\n"
+else
+  include_license = ""
+end
+
+if(@build_libraries != {})
+  include_libraries = "\n\t@echo \"|=!|29 #{@emoji_library} |mlibrary|n|;!|O\""
+else
+  include_libraries = ""
+end
+if(@debug_enabled == true)
+  include_debug = "\n\t@echo \"|=!|29 #{@emoji_debug} |Ydebug|n|;!|O\""
+else
+  include_debug = ""
+end
+if(include_license != "")
+  LICENSE = "LICENSE"
+else
+  LICENSE = ""
+end
 menu_target = <<-END_OF_STRING
 .PHONY : menu
-menu :
+menu : #{LICENSE}
 \t@echo "|]#{BOX_WIDTH}|=[|#{SHORT_WIDTH}-]|O"
 \t@echo "|=!|;!|O"
 \t@echo "|=!|27 Make targets:|;!|O"
 \t@echo "|=!|;!|O"
-\t@echo "|=!|29 #{@emoji_build} |cbuild|n|;!|O"
-\t@echo "|=!|29 #{@emoji_clean} |cclean|n|;!|O"
-\t@echo "|=!|29 #{@emoji_debug} |cdebug|n|;!|O"
+\t@echo "|=!|29 #{@emoji_build} |ybuild|n|;!|O"#{include_libraries}#{include_license}
+\t@echo "|=!|29 #{@emoji_clean} |rclean|n|;!|O"#{include_debug}
 \t@echo "|=!|29 #{@emoji_install} |cinstall|n|;!|O"
 \t@echo "|=!|29 #{@emoji_uninstall} |cuninstall|n|;!|O"
-\t@echo "|=!|29 #{@emoji_test} |ctest|n|;!|O"
+\t@echo "|=!|29 #{@emoji_test} |gtest|n|;!|O"
 \t@echo "|=!|;!|O"
 \t@echo "|=>|#{SHORT_WIDTH}-<|O"
 END_OF_STRING
 @applications.each do |app|
-  menu_target << "\t@echo \"|=!|]#{BOX_WIDTH}  Executable: bin/|O|g#{app[0]}|n|=|;!|O\"\n"
+  menu_target << "\t@echo \"|=!|]#{BOX_WIDTH}           |O|yBuild|n Executable: #{@binary_directory}/|g#{app[0]}|n|=|;!|O\"\n"
 end
 @build_libraries.each do |lib|
-  menu_target << "\t@echo \"|=!|]#{BOX_WIDTH}  Library:    bin/|O|g#{lib[0]}#{@library_extension}|n|=|;!|O\"\n"
+  menu_target << "\t@echo \"|=!|]#{BOX_WIDTH}               |O|mLibrary|n File: #{@library_directory}/|g#{lib[0]}#{@library_extension}|n|=|;!|O\"\n"
 end
+menu_target << "\t@echo \"|=>|#{SHORT_WIDTH}-<|O\"\n"
+if(@debug_enabled == true)
+  @applications.each do |app|
+    menu_target << "\t@echo \"|=!|]#{BOX_WIDTH}           |O|YDebug|n Executable: #{@binary_directory}/|Y#{app[0]}_debug|n|=|;!|O\"\n"
+  end
+  @build_libraries.each do |lib|
+    menu_target << "\t@echo \"|=!|]#{BOX_WIDTH}         |O|YDebug|n |mLibrary|n File: #{@library_directory}/|Y#{lib[0]}_debug#{@library_extension}|n|=|;!|O\"\n"
+  end
+  menu_target << "\t@echo \"|=>|#{SHORT_WIDTH}-<|O\"\n"
+end
+menu_target << "\t@echo \"|=!|]#{BOX_WIDTH}   |O|cInstall|n |yBinary|n Directory: |g#{@prefix}|n|=|;!|O\"\n"
+menu_target << "\t@echo \"|=!|]#{BOX_WIDTH}  |O|cInstall|n |mLibrary|n Directory: |g#{@library_prefix}|n|=|;!|O\"\n"
 menu_target << "\t@echo \"|={|#{SHORT_WIDTH}-}|O\"\n"
 @output << "\n"
 if(@emojis == false)
@@ -672,55 +605,111 @@ if(@emojis == false)
 end
 @output << @pipe.pipetext(menu_target)
 
-build_target = <<-END_OF_STRING
+if(@build_libraries != {} && @debug_enabled == true)
+  all_target = ".PHONY : all\nall : #{LICENSE} build library debug\n\n"
+elsif(@debug_enabled == true)
+  all_target = ".PHONY : all\nall : #{LICENSE} build debug\n\n"
+elsif(@build_libraries != {})
+  all_target = ".PHONY : all\nall : #{LICENSE} build library\n\n"
+else
+  all_target = ".PHONY : all\nall : #{LICENSE} build\n\n"
+end
+@output << all_target
+#
+# Rather than lots of Makefile heredocs in main source, most have been
+# split up into lib/template/*.rb though a few are still inline
+#
+def load_with_template(template)
+  begin
+    code = file_open_read_close(@lib_dir + '/template/' + template + '.rb')
+    if(@emojis == false)
+      strip_emojis!(code)
+    end
+    if(block_given?)
+      yield(code)
+    else
+      eval(code)
+    end
+  rescue Errno::ENOENT
+  rescue
+    notify("\n|YWARNING|n: #{$!}\n\n")
+  end
+end
+
+if(include_license != "")
+  load_with_template("license_target") do |code|
+    eval(code)
+  end
+  @output << "\n"
+  if(@emojis == false)
+    strip_emojis!(@license_target)
+  end
+  @output << @pipe.pipetext(@license_target)
+end
+
+build_targets = <<-END_OF_STRING
 .PHONY : build
-build :
+build : #{LICENSE}
 END_OF_STRING
 
 @applications.each do |app|
-  executable_target = <<-END_OF_STRING
-\t@echo "|=[|#{SHORT_WIDTH}-]|O"
-\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_build} Building executable: bin/|O|g#{app[0]}|n|=|;!|O"
-\t@echo "|={|#{SHORT_WIDTH}-}|O"
-\t@$(MAKE) $(BINARY)/#{app[0]}
-END_OF_STRING
-  if(@emojis == false)
-    strip_emojis!(executable_target)
+  load_with_template("build_target") do |code|
+    eval(code)
   end
-  build_target << @pipe.pipetext(executable_target)
-end
-
-@build_libraries.each do |lib|
-  library_target = <<-END_OF_STRING
-\t@echo "|=[|#{SHORT_WIDTH}-]|O"
-\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_build} Building library: bin/|O|g#{lib[0]}|n|=|;!|O"
-\t@echo "|={|#{SHORT_WIDTH}-}|O"
-\t@$(MAKE) $(BINARY)/#{lib[0]}#{@library_extension}
-END_OF_STRING
   if(@emojis == false)
-    strip_emojis!(library_target)
+    strip_emojis!(@build_target)
   end
-  build_target << @pipe.pipetext(library_target)
+  build_targets << @pipe.pipetext(@build_target)
+  if(@strip == true)
+    load_with_template("strip_build") do |code|
+      eval(code)
+    end
+    build_targets << @pipe.pipetext(@strip_build)
+  end
 end
 
 @output << "\n"
-@output << build_target
+@output << build_targets
+
+library_targets = <<-END_OF_STRING
+.PHONY : library
+library : #{LICENSE}
+END_OF_STRING
+
+@build_libraries.each do |lib|
+  load_with_template("library_target") do |code|
+    eval(code)
+  end
+  if(@emojis == false)
+    strip_emojis!(@library_target)
+  end
+  library_targets << @pipe.pipetext(@library_target)
+end
+
+@output << "\n"
+@output << library_targets
 
 def add_dependencies_from_file(dependencies, filename, path)
   File.readlines(filename).each do |line|
-    if(line =~ /#include \"(.*)\"/)
-      included_filename = @working_directory + '/' + @source_directory + path + $1
-      begin
-        File.open(included_filename)
-        add_dependencies_from_file(dependencies, included_filename, path)
-      rescue Errno::ENOENT
-        notify("|YWARNING|n: included dependency does not exist - Removing #{filename}:#{included_filename}\n")
-        next
-      rescue
-        notify("|YWARNING|n: #{$!} - Removing #{filename}:#{included_filename}\n")
-        next
+    begin
+      if(line =~ /#include \"(.*)\"/)
+        include = $1
+        if(filename !~ /#{include}$/)
+          included_filename = @working_directory + '/' + @source_directory + path + include
+          begin
+            File.open(included_filename)
+            add_dependencies_from_file(dependencies, included_filename, path)
+          rescue Errno::ENOENT
+            notify("|YWARNING|n: included dependency does not exist - Removing #{filename}:#{included_filename}\n")
+            next
+          rescue
+            notify("|YWARNING|n: #{$!} - Removing #{filename}:#{included_filename}\n")
+            next
+          end
+          dependencies << "\t\\\n\t$(SOURCE)#{path}#{include}"
+        end
       end
-      dependencies << "\t\\\n\t$(SOURCE)#{path}#{$1}"
+    rescue ArgumentError
     end
   end
 end
@@ -730,30 +719,13 @@ def add_dependencies(filename, path)
     dependencies = String.new
     add_dependencies_from_file(dependencies, filename, path)
     if(dependencies != "")
-      dependency_targets = <<-END_OF_STRING
-# Dependencies
-$(OBJECT)#{path}#{filename.sub(/\.cp?p?$/, '.o')} : $(SOURCE)#{path}#{filename}#{dependencies}
-\t@echo "|=!|O #{@emoji_compile} Compiling... |Y$(OBJECT)#{path}#{filename.sub(/\.cp?p?$/, '.o')}|n"
-ifeq '$(OS)' 'Windows_NT'
-\t@test -d $(OBJECT)#{path} |||| mkdir $(OBJECT)#{path}
-else
-\t@mkdir -p $(OBJECT)#{path}
-endif
-\t$(CC) $(LIBS) $(CFLAGS) -c $(SOURCE)#{path}#{filename} -o $(OBJECT)#{path}#{filename.gsub(/\.cp?p?$/, '.o')}
-# Dependencies for debug
-$(OBJECT)#{path}#{filename.sub(/\.cp?p?$/, '_debug.o')} : $(SOURCE)#{path}#{filename}#{dependencies}
-\t@echo "|=!|O #{@emoji_debug} #{@emoji_compile} Compiling... |Y$(OBJECT)#{path}#{filename.sub(/\.cp?p?$/, '_debug.o')}|n"
-ifeq '$(OS)' 'Windows_NT'
-\t@test -d $(OBJECT)#{path} |||| mkdir $(OBJECT)#{path}
-else
-\t@mkdir -p $(OBJECT)#{path}
-endif
-\t$(CC) $(LIBS) $(DEBUG_FLAGS) -c $(SOURCE)#{path}#{filename} -o $(OBJECT)#{path}#{filename.gsub(/\.cp?p?$/, '_debug.o')}
-END_OF_STRING
-      if(@emojis == false)
-        strip_emojis!(dependency_targets)
+      load_with_template("dependency_targets") do |code|
+        eval(code)
       end
-      @output << "\n" + @pipe.pipetext(dependency_targets)
+      if(@emojis == false)
+        strip_emojis!(@dependency_targets)
+      end
+      @output << "\n" + @pipe.pipetext(@dependency_targets)
     end
   rescue
     notify("|YWARNING|n: #{$!}")
@@ -788,181 +760,122 @@ add_all_dependencies(@source_directory, '/')
 counter = 0
 @applications.each do |app|
   counter += 1
-  executable_target = <<-END_OF_STRING
-$(BINARY)/#{app[0]} : $(OL#{counter})
-\t@echo "|=[|#{SHORT_WIDTH}-]|O"
-\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_link} Linking Files...|O bin/|g#{app[0]}|=|n|;!|O"
-\t@echo "|={|#{SHORT_WIDTH}-}|O"
-ifeq '$(OS)' 'Windows_NT'
-\t@test -d $(BINARY) |||| mkdir $(BINARY)
-else
-\t@mkdir -p $(BINARY)
-endif
-\t$(CC) $(LIBS) $(CFLAGS) -o $(BINARY)/#{app[0]} $(OL#{counter})#{@raw_binary_files}
-END_OF_STRING
+  load_with_template("executable_target") do |code|
+    eval(code)
+  end
   @output << "\n"
   if(@emojis == false)
-    strip_emojis!(executable_target)
+    strip_emojis!(@executable_target)
   end
-  @output << @pipe.pipetext(executable_target)
-end
-
-if(@library_extension == ".so")
-  shared = " -shared"
-else
-  shared = String.new
+  @output << @pipe.pipetext(@executable_target)
 end
 
 @build_libraries.each do |lib|
   counter += 1
-  library_target = <<-END_OF_STRING
-$(BINARY)/#{lib[0]}#{@library_extension} : $(OL#{counter})
-\t@echo "|=[|#{SHORT_WIDTH}-]|O"
-\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_link} Linking Files...|O bin/|g#{lib[0]}#{@library_extension}|=|n|;!|O"
-\t@echo "|={|#{SHORT_WIDTH}-}|O"
-ifeq '$(OS)' 'Windows_NT'
-\t@test -d $(BINARY) |||| mkdir $(BINARY)
-else
-\t@mkdir -p $(BINARY)
-endif
-\t$(CC)#{shared} $(LIBS) $(CFLAGS) -o $(BINARY)/#{lib[0]}#{@library_extension} $(OL#{counter})#{@raw_binary_files}
-END_OF_STRING
+  load_with_template("link_library_target") do |code|
+    eval(code)
+  end
   @output << "\n"
   if(@emojis == false)
-    strip_emojis!(library_target)
+    strip_emojis!(@link_library_target)
   end
-  @output << @pipe.pipetext(library_target)
+  @output << @pipe.pipetext(@link_library_target)
 end
 
-# Debug
-counter = 0
-@applications.each do |app|
-  counter += 1
-  debug_executable_target = <<-END_OF_STRING
-$(BINARY)/#{app[0]}_debug : $(DOL#{counter})
-\t@echo "|=[|#{SHORT_WIDTH}-]|O"
-\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_debug} #{@emoji_link} Linking Files...|O bin/|g#{app[0]}_debug|=|n|;!|O"
-\t@echo "|={|#{SHORT_WIDTH}-}|O"
-ifeq '$(OS)' 'Windows_NT'
-\t@test -d $(BINARY) |||| mkdir $(BINARY)
-else
-\t@mkdir -p $(BINARY)
-endif
-\t$(CC) $(LIBS) $(DEBUG_FLAGS) -o $(BINARY)/#{app[0]}_debug $(DOL#{counter})#{@raw_binary_files}
-END_OF_STRING
-  @output << "\n"
-  if(@emojis == false)
-    strip_emojis!(debug_executable_target)
+if(@debug_enabled == true)
+  counter = 0
+  @applications.each do |app|
+    counter += 1
+    load_with_template("debug_executable_target") do |code|
+      eval(code)
+    end
+    @output << "\n"
+    if(@emojis == false)
+      strip_emojis!(@debug_executable_target)
+    end
+    @output << @pipe.pipetext(@debug_executable_target)
   end
-  @output << @pipe.pipetext(debug_executable_target)
+
+  @build_libraries.each do |lib|
+    counter += 1
+    load_with_template("debug_library_target") do |code|
+      eval(code)
+    end
+    @output << "\n"
+    if(@emojis == false)
+      strip_emojis!(@debug_library_target)
+    end
+    @output << @pipe.pipetext(@debug_library_target)
+  end
 end
 
-@build_libraries.each do |lib|
-  counter += 1
-  debug_library_target = <<-END_OF_STRING
-$(BINARY)/#{lib[0]}_debug#{@library_extension} : $(DOL#{counter})
-\t@echo "|=[|#{SHORT_WIDTH}-]|O"
-\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_debug} #{@emoji_link} Linking Files...|O bin/|g#{lib[0]}_debug#{@library_extension}|=|n|;!|O"
-\t@echo "|={|#{SHORT_WIDTH}-}|O"
-ifeq '$(OS)' 'Windows_NT'
-\t@test -d $(BINARY) |||| mkdir $(BINARY)
-else
-\t@mkdir -p $(BINARY)
-endif
-\t$(CC)#{shared} $(LIBS) $(DEBUG_FLAGS) -o $(BINARY)/#{lib[0]}_debug#{@library_extension} $(DOL#{counter})#{@raw_binary_files}
-END_OF_STRING
-  @output << "\n"
-  if(@emojis == false)
-    strip_emojis!(debug_library_target)
-  end
-  @output << @pipe.pipetext(debug_library_target)
+load_with_template("generic_dependency_targets") do |code|
+  eval(code)
 end
-
-dependency_targets = <<-END_OF_STRING
-# General Auto-Dependencies
-$(OBJECT)/%.o : $(SOURCE)/%.c
-\t@echo "|=!|O #{@emoji_compile} Compiling... |Y$(@)|n"
-ifeq '$(OS)' 'Windows_NT'
-\t@test -d $(BINARY) |||| mkdir $(BINARY)
-\t@test -d $(OBJECT) |||| mkdir $(OBJECT)
-else
-\t@mkdir -p $(BINARY)
-\t@mkdir -p $(OBJECT)
-endif
-\t$(CC) $(LIBS) $(CFLAGS) -c $< -o $@
-# General Auto-Dependencies for debug
-$(OBJECT)/%_debug.o : $(SOURCE)/%.c
-\t@echo "|=!|O #{@emoji_debug} #{@emoji_compile} Compiling... |Y$(@)|n"
-ifeq '$(OS)' 'Windows_NT'
-\t@test -d $(BINARY) |||| mkdir $(BINARY)
-\t@test -d $(OBJECT) |||| mkdir $(OBJECT)
-else
-\t@mkdir -p $(BINARY)
-\t@mkdir -p $(OBJECT)
-endif
-\t$(CC) $(LIBS) $(DEBUG_FLAGS) -c $< -o $@
-END_OF_STRING
 if(@emojis == false)
-  strip_emojis!(dependency_targets)
+  strip_emojis!(@generic_dependency_targets)
 end
-@output << "\n" + @pipe.pipetext(dependency_targets)
+@output << "\n" + @pipe.pipetext(@generic_dependency_targets)
 
-clean_target = <<-END_OF_STRING
-.PHONY : clean
-clean :
-\t@echo "#{@emoji_clean} Removed |Yeverything|n from |R$(OBJECT)|n and |R$(BINARY)|n directories"
-\t@rm -rf $(OBJECT) $(BINARY)
-END_OF_STRING
+load_with_template("clean_target") do |code|
+  eval(code)
+end
 if(@emojis == false)
-  strip_emojis!(clean_target)
+  strip_emojis!(@clean_target)
 end
-@output << "\n" + @pipe.pipetext(clean_target)
+@output << "\n" + @pipe.pipetext(@clean_target)
 
-debug_target = <<-END_OF_STRING
-.PHONY : debug
-debug :
-END_OF_STRING
-
-@applications.each do |app|
-  executable_debug_target = <<-END_OF_STRING
-\t@echo "|=[|#{SHORT_WIDTH}-]|O"
-\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_debug} #{@emoji_build} |nBuilding executable:|O bin/|g#{app[0]}_debug|=|n|;!|O"
-\t@echo "|={|#{SHORT_WIDTH}-}|O"
-\t@$(MAKE) $(BINARY)/#{app[0]}_debug
-END_OF_STRING
-  if(@emojis == false)
-    strip_emojis!(executable_debug_target)
+if(@debug_enabled == true)
+  load_with_template("debug_target") do |code|
+    eval(code)
   end
-  debug_target << @pipe.pipetext(executable_debug_target)
-end
 
-@build_libraries.each do |lib|
-  library_debug_target = <<-END_OF_STRING
-\t@echo "|=[|#{SHORT_WIDTH}-]|O"
-\t@echo "|]#{BOX_WIDTH}|=! #{@emoji_debug} #{@emoji_build} Building library:|O bin/|g#{lib[0]}_debug#{@library_extension}|=|n|;!|O"
-\t@echo "|={|#{SHORT_WIDTH}-}|O"
-\t@$(MAKE) $(BINARY)/#{lib[0]}_debug#{@library_extension}
-END_OF_STRING
-  if(@emojis == false)
-    strip_emojis!(library_debug_target)
+  if(@page_debug == true)
+    @pager = " 2>&1 | less -F -R -X -e"
+  else
+    @pager = ""
   end
-  debug_target << @pipe.pipetext(library_debug_target)
-end
 
-@output << "\n"
-@output << debug_target
+  @applications.each do |app|
+    load_with_template("executable_debug_target") do |code|
+      eval(code)
+    end
+    if(@emojis == false)
+      strip_emojis!(@executable_debug_target)
+    end
+    @debug_target << @pipe.pipetext(@executable_debug_target)
+  end
+
+  @build_libraries.each do |lib|
+    load_with_template("library_debug_target") do |code|
+      eval(code)
+    end
+    if(@emojis == false)
+      strip_emojis!(@library_debug_target)
+    end
+    @debug_target << @pipe.pipetext(@library_debug_target)
+  end
+  @output << "\n"
+  @output << @debug_target
+end
 
 def default_test_target(test_target)
   test_target << "\t@echo\n"
   test_target << "\t@echo \"#{@emoji_fail} |rWARNING: No tests have been created!|n\""
 end
 
+if(@build_libraries != {})
+  test_dependencies = "test : #{LICENSE} build library"
+else
+  test_dependencies = "test : #{LICENSE} build"
+end
+
 test_target = <<-END_OF_STRING
-test :
-\t@echo -n "#{@emoji_test} Running tests"
+#{test_dependencies}
+\t@echo -n "#{@emoji_test}Running tests:"
 END_OF_STRING
 begin
-  code = File.open('demake/test-target.rb').read
+  code = file_open_read_close('demake/test-target.rb')
   if(@emojis == false)
     strip_emojis!(code)
   end
@@ -978,27 +891,31 @@ end
 
 def default_install_target(install_target)
   if(@applications != {})
-    install_target << "\tinstall -d $(PREFIX)\n"
+    install_target << "\t@test -d $(PREFIX) || install -d $(PREFIX)\n"
   end
   @applications.each do |app|
-    install_target << "\tinstall -m 755 bin/#{app[0]} $(PREFIX)\n"
+    install_target << "\t@test -f #{@binary_directory}/#{app[0]} && install -v -m 755 #{@binary_directory}/#{app[0]} $(PREFIX) |||| \\\n"
+    install_target << "\t\t(echo \"Executable file #{@binary_directory}/|g#{app[0]}|n not found.\"; \\\n"
+    install_target << "\t\techo \"Please type '|ymake build|n' first, if you wish to install.\")\n"
   end
   if(@build_libraries != {})
-    install_target << "\tinstall -d $(LIBRARY_PREFIX)\n"
+    install_target << "\t@test -d $(LIBRARY_PREFIX) || install -d $(LIBRARY_PREFIX)\n"
   end
   @build_libraries.each do |lib|
-    install_target << "\tinstall -m 644 bin/#{lib[0]}#{@library_extension} $(LIBRARY_PREFIX)\n"
+    install_target << "\t@test -f #{@library_directory}/#{lib[0]}#{@library_extension} && install -v -m 755 #{@library_directory}/#{lib[0]}#{@library_extension} $(LIBRARY_PREFIX) |||| \\\n"
+    install_target << "\t\t(echo \"Library file #{@library_directory}/|g#{lib[0]}#{@library_extension}|n not found.\"; \\\n"
+    install_target << "\t\techo \"Please type '|mmake library|n' first, if you wish to install.\")\n"
   end
   install_target << "\t@echo \"#{@emoji_install} #{@emoji_success} |gInstallation Finished|n\"\n"
 end
 
 install_target = <<-END_OF_STRING
 .PHONY : install
-install :
+install : #{LICENSE}
 \t@echo "#{@emoji_install} Starting install..."
 END_OF_STRING
 begin
-  code = File.open('demake/install-target.rb').read
+  code = file_open_read_close('demake/install-target.rb')
   if(@emojis == false)
     strip_emojis!(code)
   end
@@ -1039,7 +956,7 @@ uninstall :
 \t@echo "#{@emoji_uninstall} Starting uninstall..."
 END_OF_STRING
 begin
-  code = File.open('demake/uninstall-target.rb').read
+  code = file_open_read_close('demake/uninstall-target.rb')
   if(@emojis == false)
     strip_emojis!(code)
   end
@@ -1065,5 +982,25 @@ if(@example || @oreo)
   end
   Dir.chdir('..')
 else
-  puts @output
+  if(File.exist?('Makefile'))
+    lines = file_open_read_close('Makefile').split("\n")
+    if(lines[1] =~ /^# Makefile automatically generated by Ruby Gem - demake [0-9]*\.[0-9]*\.[0-9]*$/)
+      File.open('Makefile', 'w').write(@output)
+    else
+      match = lines.find do |e|
+        e =~ /^# Makefile automatically generated by Ruby Gem - demake [0-9]*\.[0-9]*\.[0-9]*$/
+      end
+      if(match != nil)
+        print(@pipe.pipetext("|yMakefile|n already exists, |Rbut has been modified|n overwrite anyway (y/n)? "))
+      else
+        print(@pipe.pipetext("|yMakefile|n already exists, |Rand is unrecognized|n overwrite anyway (y/n)? "))
+      end
+      if(STDIN.getc == ?y)
+        File.open('Makefile', 'w').write(@output)
+      end
+    end
+  else
+    File.open('Makefile', 'w').write(@output)
+#    puts @output
+  end
 end
