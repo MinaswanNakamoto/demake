@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name        = "demake"
-  s.version     = "0.1.2"
+  s.version     = "0.2.0"
   s.summary     = "Develop, Decorate and manage Dependencies for C (GNU) Makefiles easily with a Ruby script."
   s.description = "== Develop, Decorate and manage Dependencies for C (GNU) Makefiles easily with a Ruby script.
 
@@ -27,14 +27,15 @@ Gem::Specification.new do |s|
   > mkdir demake
   > echo \"hello string\" > demake/applications
   > echo \"goodbye string\" >> demake/applications
-  > demake > Makefile
+  > demake
 
   For customization, optionally include (see example):
-  demake/settings.rb, demake/test-target.rb, demake/install-target.rb
+  demake/settings.rb, demake/test-target.rb, demake/install-target.rb,
+  demake/license
 
-  The output of the command by itself is a (GNU style) Makefile:
+  The output of the command by itself is a (GNU style) file named Makefile:
 
-  > demake > Makefile
+  > demake
 
   You can also clone from git for a more complete example:
 
@@ -51,7 +52,7 @@ Gem::Specification.new do |s|
 "
   s.authors     = ["Minaswan Nakamoto"]
   s.email       = "minaswan.nakamoto@onionmail.org"
-  s.files       = ["bin/demake"]
+  s.files       = ["bin/demake"] + Dir.glob("lib/**/*")
   s.executables = ["demake"]
 #  s.add_dependency "pipetext", [">= 0.1.3"]
   s.add_runtime_dependency "pipetext", "~> 0.1", ">= 0.1.3"
