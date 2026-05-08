@@ -1,12 +1,12 @@
 #!/usr/bin/env ruby
 #
-# demake - Executeable script which uses Ruby to generate decorated make files
+# demake - Executable script which uses Ruby to generate decorated GNU Makefiles
 #          for multiple related applications.
 #
 require 'rbconfig'      # Needed by older versions of Ruby
 require 'pipetext'
 
-demake_version = "0.2.0"
+demake_version = "0.2.1"
 
 @silent = false
 @compiler = "gcc"
@@ -118,121 +118,119 @@ def notify(string)
 end
 
 @lib_data = File.join(File.expand_path("../..", __FILE__), "lib", "data")
+@lib_apps = File.join(File.expand_path("../..", __FILE__), "lib", "apps")
 @lib_dir = File.join(File.expand_path("../..", __FILE__), "lib")
+@available_apps = Array.new
 
-if(ARGV[0] == "help" || ARGV[0] == "--help" || ARGV[0] == "-h" ||
-    ARGV[0] == "?" || ARGV[0] == "-?")
-  program = File.basename($0)
-  notify("Command syntax:\n\n")
-  notify("|y#{program}|n          - Create or update Makefile\n")
-  notify("|y#{program} example|n  - Create an example application\n")
-  notify("|y#{program} oreo|n     - Create a different sample application\n\n")
-  exit!
-end
-
-def file_open_write_close(filename, data)
-  File.open(filename, 'w') do |f|
-    f.write(data)
+Dir.entries(@lib_apps).each do |e|
+  if(e != '.' && e != '..')
+    @available_apps << e
   end
 end
 
-def file_open_read_close(filename)
+def file_open_write_close(filename, data)
+  begin
+    File.open(filename, 'w') do |f|
+      f.write(data)
+    end
+  rescue
+    notify("|RError|n: #{$!}")
+  end
+end
+
+def file_open_read_close(filename, notify_warning=true)
   data = String.new
-  File.open(filename, 'r') do |f|
-    data = f.read
+  begin
+    File.open(filename, 'r') do |f|
+      data = f.read
+    end
+  rescue
+    if(notify_warning == true)
+      notify("|YWARNING|n: #{$!.to_s.sub(/@ rb_[a-zA-Z_]* /, '')}")
+    end
   end
   return(data)
 end
 
-@example = false
-if(ARGV[0] =~ /^example$/)
-  if(File.directory?('example') == true)
-    notify("\n#{@emoji_fail}|RError|n: |Ydirectory example |Ralready exists, aborting creation|n\n\n" +
-           "Delete the directory and try again if you wish to recreate it.\n\n")
-    exit!
+def copy_template(filename)
+  if(File.directory?(filename) == true)
+    new_name = filename.sub(/^#{@lib_apps}./, '')
+    begin
+      if(File.directory?(new_name) != true)
+        Dir.mkdir(new_name)
+        notify("#{@emoji_success} Created directory: |g#{new_name}|n |[open file folder]\n")
+      end
+      Dir.entries(filename).each do |e|
+        if(e != '.' && e != '..')
+          copy_template(File.join(filename, e))
+        end
+      end
+    rescue Errno::EACCES
+      notify("|RError|n: #{$!.to_s.sub(/@ dir_s_mkdir /, '')}")
+      exit!
+    rescue
+      notify("|RError|n: #{$!}")
+      exit!
+    end
+  else
+    data = file_open_read_close(filename)
+    new_name = filename.sub(/^#{@lib_apps}./, '')
+    file_open_write_close(new_name, file_open_read_close(filename))
+    notify("#{@emoji_success} Created file: |y#{new_name}|n |[page facing up]\n")
   end
-  @example = true
-  # Code files used by the example
-  example_settings_rb = file_open_read_close(@lib_data + '/example/demake/settings.rb')
-  hello_c = file_open_read_close(@lib_data + '/example/src/hello.c')
-  goodbye_c = file_open_read_close(@lib_data + '/example/src/goodbye.c')
-  string_h = file_open_read_close(@lib_data + '/example/src/string/string.h')
-  string_c = file_open_read_close(@lib_data + '/example/src/string/string.c')
-  testtarget_rb = file_open_read_close(@lib_data + '/example/demake/test-target.rb')
-  license = file_open_read_close(@lib_data + '/example/demake/license')
-
-  Dir.mkdir('example')
-  notify("#{@emoji_success} Created directory: |gexample|n |[open file folder]\n")
-  Dir.mkdir('example/src')
-  notify("#{@emoji_success} Created directory: |gexample|n/|gsrc|n |[open file folder]\n")
-  file_open_write_close('example/src/hello.c', hello_c)
-  notify("#{@emoji_success} Created file: |gexample|n/|gsrc|n/|yhello.c|n |[page facing up]\n")
-  file_open_write_close('example/src/goodbye.c', goodbye_c)
-  notify("#{@emoji_success} Created file: |gexample|n/|gsrc|n/|ygoodbye.c|n |[page facing up]\n")
-  Dir.mkdir('example/src/string')
-  notify("#{@emoji_success} Created directory: |gexample|n/|gsrc|n/|gstring|n |[open file folder]\n")
-  file_open_write_close('example/src/string/string.h', string_h)
-  notify("#{@emoji_success} Created file: |gexample|n/|gsrc|n/|gstring|n/|ystring.h|n |[page facing up]\n")
-  file_open_write_close('example/src/string/string.c', string_c)
-  notify("#{@emoji_success} Created file: |gexample|n/|gsrc|n/|gstring|n/|ystring.c|n |[page facing up]\n")
-  Dir.mkdir('example/demake')
-  notify("#{@emoji_success} Created directory: |gexample|n/|gdemake|n |[open file folder]\n")
-  file_open_write_close('example/demake/applications', "hello string\ngoodbye string\n")
-  notify("#{@emoji_success} Created file: |gexample|n/|gdemake|n/|yapplications|n |[page facing up]\n")
-  file_open_write_close('example/demake/settings.rb', example_settings_rb)
-  notify("#{@emoji_success} Created file: |gexample|n/|gdemake|n/|ysettings.rb|n |[page facing up]\n")
-  file_open_write_close('example/demake/test-target.rb', testtarget_rb)
-  notify("#{@emoji_success} Created file: |gexample|n/|gdemake|n/|ytest-target.rb|n |[page facing up]\n")
-  file_open_write_close('example/demake/license', license)
-  notify("#{@emoji_success} Created file: |gexample|n/|gdemake|n/|ylicense|n |[page facing up]\n")
-  Dir.chdir('example')
-  @working_directory = Dir.pwd
 end
 
-@oreo = false
-if(ARGV[0] =~ /^oreo$/)
-  if(File.directory?('oreo') == true)
-    notify("\n#{@emoji_fail}|RError|n: |Ydirectory oreo |Ralready exists, aborting creation|n\n\n" +
-           "Delete the directory and try again if you wish to recreate it.\n\n")
-    exit!
+@found_application = nil
+@suggestion = String.new
+@available_apps.sort.each do |app|
+  if(ARGV[0] =~ /^#{app}$/)
+    if(File.directory?(app) == true)
+      notify("\n#{@emoji_fail}|RError|n: |Ydirectory #{app} |Ralready exists, aborting creation|n\n\n" +
+             "Delete the directory and try again if you wish to recreate it.\n\n")
+      exit!
+    end
+    @found_application = app
+    copy_template(File.join(@lib_apps, app))
+    begin
+      File.open(File.join(@lib_apps, app, 'demake', 'suggestion'), 'r') do |f|
+        @suggestion = f.read.chomp
+      end
+    rescue
+    end
+    Dir.chdir(app)
+    @working_directory = Dir.pwd
   end
-  @oreo = true
-  # Code file used by oreo
-  oreo_settings_rb = file_open_read_close(@lib_data + '/oreo/demake/settings.rb')
-  defines_h = file_open_read_close(@lib_data + '/oreo/src/defines.h')
-  typedefs_h = file_open_read_close(@lib_data + '/oreo/src/typedefs.h')
-  fast_read_file_h = file_open_read_close(@lib_data + '/oreo/src/fast_read_file.h')
-  oreo_c = file_open_read_close(@lib_data + '/oreo/src/oreo.c')
-  testtarget_rb = file_open_read_close(@lib_data + '/oreo/demake/test-target.rb')
-  oreo_test_txt = file_open_read_close(@lib_data + '/oreo/oreo_test.txt')
-  license = file_open_read_close(@lib_data + '/oreo/demake/license')
+end
 
-  Dir.mkdir('oreo')
-  notify("#{@emoji_success} Created directory: |goreo|n |[open file folder]\n")
-  Dir.mkdir('oreo/src')
-  notify("#{@emoji_success} Created directory: |goreo|n/|gsrc|n |[open file folder]\n")
-  file_open_write_close('oreo/src/defines.h', defines_h)
-  notify("#{@emoji_success} Created file: |goreo|n/|gsrc|n/|ydefines.h|n |[page facing up]\n")
-  file_open_write_close('oreo/src/typedefs.h', typedefs_h)
-  notify("#{@emoji_success} Created file: |goreo|n/|gsrc|n/|ytypedefs.h|n |[page facing up]\n")
-  file_open_write_close('oreo/src/fast_read_file.h', fast_read_file_h)
-  notify("#{@emoji_success} Created file: |goreo|n/|gsrc|n/|yfast_read_file.h|n |[page facing up]\n")
-  file_open_write_close('oreo/src/oreo.c', oreo_c)
-  notify("#{@emoji_success} Created file: |goreo|n/|gsrc|n/|yoreo.c|n |[page facing up]\n")
-  Dir.mkdir('oreo/demake')
-  notify("#{@emoji_success} Created directory: |goreo|n/|gdemake|n |[open file folder]\n")
-  file_open_write_close('oreo/demake/applications', "oreo\n")
-  notify("#{@emoji_success} Created file: |goreo|n/|gdemake|n/|yapplications|n |[page facing up]\n")
-  file_open_write_close('oreo/demake/settings.rb', oreo_settings_rb)
-  notify("#{@emoji_success} Created file: |goreo|n/|gdemake|n/|ysettings.rb|n |[page facing up]\n")
-  file_open_write_close('oreo/demake/test-target.rb', testtarget_rb)
-  notify("#{@emoji_success} Created file: |goreo|n/|gdemake|n/|ytest-target.rb|n |[page facing up]\n")
-  file_open_write_close('oreo/demake/license', license)
-  notify("#{@emoji_success} Created file: |goreo|n/|gdemake|n/|ylicense|n |[page facing up]\n")
-  Dir.chdir('oreo')
-  file_open_write_close('oreo_test.txt', oreo_test_txt)
-  notify("#{@emoji_success} Created file: |goreo|n/|yoreo_text.txt|n |[page facing up]\n")
-  @working_directory = Dir.pwd
+need_help = false
+if(ARGV[0] == "help" || ARGV[0] == "--help" || ARGV[0] == "-h" ||
+    ARGV[0] == "?" || ARGV[0] == "-?")
+  need_help = true
+end
+if(need_help == false && ARGV[0] != nil && @found_application == nil)
+  notify("Unknown argument: #{ARGV[0]}\n\n")
+  need_help = true
+end
+if(need_help == true)
+  program = File.basename($0)
+  COLUMN_WIDTH = 20
+  syntax = "|]#{COLUMN_WIDTH}Command syntax:\n\n" + "|y#{program}|n|; - Create or update Makefile\n"
+  @available_apps.sort.each do |app|
+    data = String.new
+    begin
+      File.open(File.join(@lib_apps, app, 'demake', 'brief_description'), 'r') do |f|
+        data = f.read.chomp
+      end
+    rescue
+    end
+    if(data != "")
+      syntax << "|y#{program} #{app}|n|; - #{data}\n"
+    else
+      syntax << "|y#{program} #{app}|n\n"
+    end
+  end
+  notify(syntax + "\n")
+  exit!
 end
 
 @applications = Hash.new
@@ -240,18 +238,11 @@ end
 
 # Check for settings / default override
 begin
-  if(@example == false && @oreo == false)
-    code = file_open_read_close('demake/settings.rb')
-  elsif(@example == true)
-    code = example_settings_rb
-  elsif(@oreo == true)
-    code = oreo_settings_rb
-  end
+  code = file_open_read_close('demake/settings.rb')
   if(@emojis == false)
     strip_emojis!(code)
   end
   eval code
-rescue Errno::ENOENT
 rescue
   notify("\n|YWARNING|n: #{$!}\n\n")
 end
@@ -262,64 +253,57 @@ else
   @library_extension = '.so'
 end
 
-if(@example == false && @oreo == false)
-  # Applications to build
-  no_applications_file = true
-  begin
-    # The expected format is the application followed by a list of its dependencies
-    # all on the same line separated by space, : or tab and # for comments
-    application_and_dependencies = file_open_read_close('demake/applications').split(/\n/)
-    no_applications_file = false
-    application_and_dependencies.each do |app|
-      if(app !~ /^#/ && app !~ /^[ \t]*#/)
-        if(app =~ /([^ :\t]*)[ :\t]*(.*)[ \t]*#?.*/)
-          application = $1
-          dependencies = $2.sub(/#.*$/, '').split(/[ :\t]/)
-          @applications[application] = dependencies
-        else
-          @applications[app] = Array.new
-        end
+# Applications to build
+no_applications_file = true
+begin
+  # The expected format is the application followed by a list of its dependencies
+  # all on the same line separated by space, : or tab and # for comments
+  application_and_dependencies = file_open_read_close('demake/applications').split(/\n/)
+  no_applications_file = false
+  application_and_dependencies.each do |app|
+    if(app !~ /^#/ && app !~ /^[ \t]*#/)
+      if(app =~ /([^ :\t]*)[ :\t]*(.*)[ \t]*#?.*/)
+        application = $1
+        dependencies = $2.sub(/#.*$/, '').split(/[ :\t]/)
+        @applications[application] = dependencies
+      else
+        @applications[app] = Array.new
       end
     end
-  rescue
   end
+rescue
+end
 
-  # Libraries to build
-  no_libraries_file = true
-  begin
-    # The expected format is the application followed by a list of its dependencies
-    # all on the same line separated by space, : or tab and # for comments
-    libraries_and_dependencies = file_open_read_close('demake/libraries').split(/\n/)
-    no_libraries_file = false
-    libraries_and_dependencies.each do |lib|
-      if(lib !~ /^#/ && lib !~ /^[ \t]*#/)
-        if(lib =~ /([^ :\t]*)[ :\t]*(.*)[ \t]*#?.*/)
-          library = $1
-          dependencies = $2.sub(/#.*$/, '').split(/[ :\t]/)
-          @build_libraries[library] = dependencies
-        else
-          @build_libraries[lib] = Array.new
-        end
+# Libraries to build
+no_libraries_file = true
+begin
+  # The expected format is the application followed by a list of its dependencies
+  # all on the same line separated by space, : or tab and # for comments
+  libraries_and_dependencies = file_open_read_close('demake/libraries', false).split(/\n/)
+  no_libraries_file = false
+  libraries_and_dependencies.each do |lib|
+    if(lib !~ /^#/ && lib !~ /^[ \t]*#/)
+      if(lib =~ /([^ :\t]*)[ :\t]*(.*)[ \t]*#?.*/)
+        library = $1
+        dependencies = $2.sub(/#.*$/, '').split(/[ :\t]/)
+        @build_libraries[library] = dependencies
+      else
+        @build_libraries[lib] = Array.new
       end
     end
-  rescue
   end
-  if(no_applications_file && no_libraries_file)
-    notify("\n#{@emoji_fail}|RError|n: |Yapplications file|n |Rdoes not exist|n\n\n" +
-           "You must create a file named |Yapplications|n which contains a list of\n" +
-           "executeable application names and any dependencies to be compiled.\n\n")
-    exit!
-  elsif(@applications == {} && @build_libraries == {})
-    notify("\n#{@emoji_fail}|RError|n: |Yapplications file|n |Rcannot be empty|n\n\n" +
-           "You must create a file named |Yapplications|n which contains a list of\n" +
-           "executeable application names and any dependencies to be compiled.\n\n")
-    exit!
-  end
-elsif(@oreo == true)
-  @applications['oreo'] = Array.new
-elsif(@example == true)
-  @applications['hello'] = ['string']
-  @applications['goodbye'] = ['string']
+rescue
+end
+if(no_applications_file && no_libraries_file)
+  notify("\n#{@emoji_fail}|RError|n: |Yapplications file|n |Rdoes not exist|n\n\n" +
+         "You must create a file named |Yapplications|n which contains a list of\n" +
+         "executable application names and any dependencies to be compiled.\n\n")
+  exit!
+elsif(@applications == {} && @build_libraries == {})
+  notify("\n#{@emoji_fail}|RError|n: |Yapplications file|n |Rcannot be empty|n\n\n" +
+         "You must create a file named |Yapplications|n which contains a list of\n" +
+         "executable application names and any dependencies to be compiled.\n\n")
+  exit!
 end
 
 @output = <<-END_OF_STRING
@@ -915,7 +899,10 @@ install : #{LICENSE}
 \t@echo "#{@emoji_install} Starting install..."
 END_OF_STRING
 begin
-  code = file_open_read_close('demake/install-target.rb')
+  code = String.new
+  File.open('demake/install-target.rb', 'r') do |f|
+    code = f.read
+  end
   if(@emojis == false)
     strip_emojis!(code)
   end
@@ -956,7 +943,10 @@ uninstall :
 \t@echo "#{@emoji_uninstall} Starting uninstall..."
 END_OF_STRING
 begin
-  code = file_open_read_close('demake/uninstall-target.rb')
+  code = String.new
+  File.open('demake/uninstall-target.rb', 'r') do |f|
+    code = f.read
+  end
   if(@emojis == false)
     strip_emojis!(code)
   end
@@ -971,14 +961,11 @@ if(@emojis == false)
 end
 @output << "\n" + @pipe.pipetext(uninstall_target)
 
-if(@example || @oreo)
+if(@found_application != nil)
   File.open('Makefile', 'w').write(@output)
-  if(@example)
-    notify("#{@emoji_success} Created file: |gexample|n/|yMakefile|n |[page facing up]\n\n" +
-           "Suggestion: |Ccd example ; make ; make build ; make test|n\n")
-  elsif(@oreo)
-    notify("#{@emoji_success} Created file: |goreo|n/|yMakefile|n |[page facing up]\n\n" +
-           "Suggestion: |Ccd oreo ; make ; make build ; make test|n\n")
+  notify("#{@emoji_success} Created file: |y#{@found_application}/Makefile|n |[page facing up]\n\n")
+  if(@suggestion != "")
+    notify("Suggestion: |C#{@suggestion}|n\n")
   end
   Dir.chdir('..')
 else
