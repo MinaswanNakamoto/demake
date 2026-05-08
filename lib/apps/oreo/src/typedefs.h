@@ -59,4 +59,3 @@ color green "\<(b8|b16|b32|b64|c8|uc8|i8|i16|i32|i64|u8|u16|u32|u64|f32|f64)\>"
 For emacs, it would seem the magic is strong, because it just works. :)
 
 */
-nezmar@F44-Nezmar1:~/X-local/demake/lib/apps/oreo/src$ 
