@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name        = "demake"
-  s.version     = "0.2.0"
+  s.version     = "0.2.1"
   s.summary     = "Develop, Decorate and manage Dependencies for C (GNU) Makefiles easily with a Ruby script."
   s.description = "== Develop, Decorate and manage Dependencies for C (GNU) Makefiles easily with a Ruby script.
 
@@ -37,7 +37,7 @@ Gem::Specification.new do |s|
 
   > demake
 
-  You can also clone from git for a more complete example:
+  You can also clone from git:
 
   > git clone https://github.com/MinaswanNakamoto/demake.git
   > chmod +x demake/bin/demake
