@@ -126,6 +126,7 @@ This project is licensed under the [MIT License](LICENSE).
 Minaswan Nakamoto – minaswan.nakamoto@proton.me
 
 ## 📄 Sample Output
+```bash
 minaswan@F42-Nakamoto1:~$ ls
 minaswan@F42-Nakamoto1:~$ demake
 WARNING: No such file or directory - demake/settings.rb
@@ -242,3 +243,4 @@ make[1]: 'bin/oreo' is up to date.
 make[1]: Leaving directory '/home/minaswan/oreo'
 Stripping bin/oreo
 minaswan@F42-Nakamoto1:~/oreo$ 
+```
