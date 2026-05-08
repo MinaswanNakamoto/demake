@@ -1,0 +1,1 @@
+cd example ; make ; make build ; make test
