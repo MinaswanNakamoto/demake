@@ -22,9 +22,13 @@ Develop, Decorate and manage Dependencies for C (GNU) Makefiles easily.
 
 ### Prerequisites
 Install Ruby and Ruby Gems, typically either:
+```bash
 $ dnf install ruby rubygems make gcc
+```
 **OR**
+```bash
 $ apt install ruby rubygems make gcc
+```
 
 ### Installation
 
