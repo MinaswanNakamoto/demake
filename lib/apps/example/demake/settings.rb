@@ -12,10 +12,13 @@
 #
 #@source_directory = "source"           # "src"
 #
-# ** make clean deletes all files in these directories **
+# ** make clean can delete all files in these directories **
 #
+#@clean_includes_binary_directory = false
 #@binary_directory = "binary"           # "bin"
+#@clean_includes_library_directory = false
 #@library_directory = "library"         # "lib"
+# By default only object is cleaned
 #@object_directory = "object"           # "obj"
 #
 #@emojis = false                        # true
