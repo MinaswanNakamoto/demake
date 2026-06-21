@@ -6,7 +6,7 @@
 require 'rbconfig'      # Needed by older versions of Ruby
 require 'pipetext'
 
-demake_version = "0.2.1"
+demake_version = "0.2.2"
 
 @silent = false
 @compiler = "gcc"
@@ -30,8 +30,10 @@ SHORT_WIDTH     = BOX_WIDTH - 8
 # Contains code, does not get touched
 @source_directory = "src"
 
-# These get completely blown away with make clean
+# These can get completely blown away with make clean
+@clean_includes_binary_directory = false
 @binary_directory = "bin"
+@clean_includes_library_directory = false
 @library_directory = "lib"
 @object_directory = "obj"
 
