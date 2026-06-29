@@ -89,6 +89,12 @@ demake example
 ```
 This will create a directory named example containing the example.
 
+To create a new application:
+```bash
+demake new <name>
+```
+This will create a new directory and basic files for a new application.
+
 To create an example with a single sample application:
 ```bash
 demake oreo
@@ -114,6 +120,7 @@ you might try the gen_application shell script.
 - [x] Build Library
 - [x] Licensing
 - [x] Help
+- [X] Demake New
 - [ ] Make Check
 - [ ] Make Documentation
 - [ ] Make Readme
@@ -137,6 +144,87 @@ WARNING: No such file or directory - demake/applications
 You must create a file named applications which contains a list of
 executable application names and any dependencies to be compiled.
 
+minaswan@F42-Nakamoto1:~$ demake new hello
+✔  Created directory: hello 📂
+✔  Created directory: hello/demake 📂
+✔  Created file: hello/demake/applications 📄
+✔  Created file: hello/demake/settings.rb 📄
+✔  Created file: hello/demake/license 📄
+✔  Created file: hello/demake/test-target.rb 📄
+✔  Created directory: hello/src 📂
+✔  Created file: hello/src/hello.c 📄
+✔  demake/settings.rb is present
+✔  Created file: hello/Makefile 📄
+
+Suggestion: cd hello ; make ; make build ; make test
+minaswan@F42-Nakamoto1:~$ cd hello ; make ; make build ; make test
+
+┌────────────────────────────────────────────────────────────────────────────────┐
+│ MIT License                                                                    │
+│                                                                                │
+│ Permission is hereby granted, free of charge, to any person obtaining a copy   │
+│ of this software and associated documentation files (the "Software"), to deal  │
+│ in the Software without restriction, including without limitation the rights   │
+│ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell      │
+│ copies of the Software, and to permit persons to whom the Software is          │
+│ furnished to do so, subject to the following conditions:                       │
+│                                                                                │
+│ The above copyright notice and this permission notice shall be included in all │
+│ copies or substantial portions of the Software.                                │
+│                                                                                │
+│ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR     │
+│ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,       │
+│ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE    │
+│ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER         │
+│ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,  │
+│ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE  │
+│ SOFTWARE.                                                                      │
+└────────────────────────────────────────────────────────────────────────────────┘
+
+╔═════════════════════════════════════════════════════════════════════════╗
+║                                                                         ║
+║                           Make targets:                                 ║
+║                                                                         ║
+║                             🚧  build                                   ║
+║                             📜  license                                 ║
+║                             🔥  clean                                   ║
+║                             🐛  debug                                   ║
+║                             🔩  install                                 ║
+║                             🔧  uninstall                               ║
+║                             ❓  test                                    ║
+║                                                                         ║
+╠═════════════════════════════════════════════════════════════════════════╣
+║           Build Executable: bin/hello                                   ║
+╠═════════════════════════════════════════════════════════════════════════╣
+║           Debug Executable: bin/hello_debug                             ║
+╠═════════════════════════════════════════════════════════════════════════╣
+║   Install Binary Directory: /usr/local/bin/                             ║
+║  Install Library Directory: /usr/local/lib/                             ║
+╚═════════════════════════════════════════════════════════════════════════╝
+╔═════════════════════════════════════════════════════════════════════════╗
+║ 🚧  Building executable: bin/hello                                      ║
+╚═════════════════════════════════════════════════════════════════════════╝
+make[1]: Entering directory '/home/minaswan/hello'
+║ 🛠  Compiling... obj/hello.o
+gcc -O2 -ansi -pedantic   -c src/hello.c -o obj/hello.o
+╔═════════════════════════════════════════════════════════════════════════╗
+║ 🔗  Linking Files... bin/hello                                          ║
+╚═════════════════════════════════════════════════════════════════════════╝
+gcc -O2 -ansi -pedantic   obj/hello.o   -o bin/hello
+make[1]: Leaving directory '/home/minaswan/hello'
+Stripping bin/hello
+╔═════════════════════════════════════════════════════════════════════════╗
+║ 🚧  Building executable: bin/hello                                      ║
+╚═════════════════════════════════════════════════════════════════════════╝
+make[1]: Entering directory '/home/minaswan/hello'
+make[1]: 'bin/hello' is up to date.
+make[1]: Leaving directory '/home/minaswan/hello'
+Stripping bin/hello
+❓ Running tests:
+Testing command:
+bin/hello
+Hello, world!
+minaswan@F42-Nakamoto1:~$ cd ..
 minaswan@F42-Nakamoto1:~$ demake oreo
 ✔  Created directory: oreo 📂
 ✔  Created file: oreo/Makefile 📄
@@ -231,7 +319,6 @@ oreo: Test 3
 oreo: Test 4
 bin/oreo oreo_test.txt
 oreo: Test 5
-
 minaswan@F42-Nakamoto1:~/oreo$ demake
 ✔  demake/settings.rb is present
 minaswan@F42-Nakamoto1:~/oreo$ make build
