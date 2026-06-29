@@ -6,7 +6,7 @@
 require 'rbconfig'      # Needed by older versions of Ruby
 require 'pipetext'
 
-demake_version = "0.2.2"
+demake_version = "0.2.3"
 
 @silent = false
 @compiler = "gcc"
@@ -123,7 +123,6 @@ end
 @lib_apps = File.join(File.expand_path("../..", __FILE__), "lib", "apps")
 @lib_dir = File.join(File.expand_path("../..", __FILE__), "lib")
 @available_apps = Array.new
-
 Dir.entries(@lib_apps).each do |e|
   if(e != '.' && e != '..')
     @available_apps << e
@@ -151,7 +150,7 @@ def file_open_read_close(filename, notify_warning=true)
       notify("|YWARNING|n: #{$!.to_s.sub(/@ rb_[a-zA-Z_]* /, '')}")
     end
   end
-  return(data)
+  return data
 end
 
 def copy_template(filename)
@@ -175,32 +174,102 @@ def copy_template(filename)
       exit!
     end
   else
-    data = file_open_read_close(filename)
+#    data = file_open_read_close(filename)
     new_name = filename.sub(/^#{@lib_apps}./, '')
     file_open_write_close(new_name, file_open_read_close(filename))
     notify("#{@emoji_success} Created file: |y#{new_name}|n |[page facing up]\n")
   end
 end
 
+def create_new_application(new_name)
+  begin
+    if(File.directory?(new_name) != true)
+      Dir.mkdir(new_name)
+      notify("#{@emoji_success} Created directory: |g#{new_name}|n |[open file folder]\n")
+    end
+    if(File.directory?(new_name + "/demake") != true)
+      Dir.mkdir(new_name + "/demake")
+      notify("#{@emoji_success} Created directory: |g#{new_name}/demake|n |[open file folder]\n")
+    end
+    begin
+      File.open("#{new_name}/demake/applications", 'w') do |f|
+        f.write("#{new_name}\n")
+      end
+      notify("#{@emoji_success} Created file: |y#{new_name}/demake/applications|n |[page facing up]\n")
+    rescue
+      notify("|RError|n: #{$!}")
+    end
+    file_open_write_close(new_name + "/demake/settings.rb", file_open_read_close(@lib_apps + "/example/demake/settings.rb"))
+    notify("#{@emoji_success} Created file: |y#{new_name}/demake/settings.rb|n |[page facing up]\n")
+    file_open_write_close(new_name + "/demake/license", file_open_read_close(@lib_apps + "/example/demake/license"))
+    notify("#{@emoji_success} Created file: |y#{new_name}/demake/license|n |[page facing up]\n")
+    begin
+      File.open("#{new_name}/demake/test-target.rb", 'w') do |f|
+        f.write("test_targets = <<-END_OF_STRING\n")
+        f.write("\t@echo\n\t@echo \"|YTesting command:|n\"\n\tbin/#{new_name}\n")
+        f.write("END_OF_STRING\n")
+        f.write("test_target << test_targets\n")
+      end
+      notify("#{@emoji_success} Created file: |y#{new_name}/demake/test-target.rb|n |[page facing up]\n")
+    rescue
+      notify("|RError|n: #{$!}")
+    end
+    if(File.directory?(new_name + "/src") != true)
+      Dir.mkdir(new_name + "/src")
+      notify("#{@emoji_success} Created directory: |g#{new_name}/src|n |[open file folder]\n")
+    end
+    file_open_write_close(new_name + "/src/typedefs.h", file_open_read_close(@lib_data + "/libsrc/typedefs.h"))
+    file_open_write_close(new_name + "/src/defines.h", file_open_read_close(@lib_data + "/libsrc/defines.h"))
+    file_open_write_close(new_name + "/src/base.h", file_open_read_close(@lib_data + "/libsrc/base.h"))
+    begin
+      File.open("#{new_name}/src/#{new_name}.c", 'w') do |f|
+        f.write("/*\n\n  #{new_name}.c - #{new_name} main application entry point\n\n*/\n\n" +
+                "#include <stdio.h>\n\n#include \"base.h\"\n\n" +
+                "i32 main(i32 argc, c8 *argv[]) {\n  printf(\"Hello, world!\\n\");\n  return 0;\n}\n")
+      end
+      notify("#{@emoji_success} Created file: |y#{new_name}/src/#{new_name}.c|n |[page facing up]\n")
+    rescue
+      notify("|RError|n: #{$!}")
+    end
+  rescue Errno::EACCES
+    notify("|RError|n: #{$!.to_s.sub(/@ dir_s_mkdir /, '')}")
+    exit!
+  rescue
+    notify("|RError|n: #{$!}")
+  end
+end
+
 @found_application = nil
 @suggestion = String.new
-@available_apps.sort.each do |app|
-  if(ARGV[0] =~ /^#{app}$/)
-    if(File.directory?(app) == true)
-      notify("\n#{@emoji_fail}|RError|n: |Ydirectory #{app} |Ralready exists, aborting creation|n\n\n" +
-             "Delete the directory and try again if you wish to recreate it.\n\n")
-      exit!
-    end
-    @found_application = app
-    copy_template(File.join(@lib_apps, app))
-    begin
-      File.open(File.join(@lib_apps, app, 'demake', 'suggestion'), 'r') do |f|
-        @suggestion = f.read.chomp
+
+if(ARGV[0] =~ /^new/)
+  if(ARGV[1] == nil || ARGV[1] == "")
+    notify("\n#{@emoji_fail}|RError|n: |Ynew application name |Rrequired|n.\n\n");
+    exit!
+  end
+  @found_application = "new"
+  create_new_application(ARGV[1])
+  Dir.chdir(ARGV[1])
+  @working_directory = Dir.pwd
+else
+  @available_apps.sort.each do |app|
+    if(ARGV[0] =~ /^#{app}$/)
+      if(File.directory?(app) == true)
+        notify("\n#{@emoji_fail}|RError|n: |Ydirectory #{app} |Ralready exists, aborting creation|n\n\n" +
+               "Delete the directory and try again if you wish to recreate it.\n\n")
+        exit!
       end
-    rescue
+      @found_application = app
+      copy_template(File.join(@lib_apps, app))
+      begin
+        File.open(File.join(@lib_apps, app, 'demake', 'suggestion'), 'r') do |f|
+          @suggestion = f.read.chomp
+        end
+      rescue
+      end
+      Dir.chdir(app)
+      @working_directory = Dir.pwd
     end
-    Dir.chdir(app)
-    @working_directory = Dir.pwd
   end
 end
 
@@ -217,6 +286,8 @@ if(need_help == true)
   program = File.basename($0)
   COLUMN_WIDTH = 20
   syntax = "|]#{COLUMN_WIDTH}Command syntax:\n\n" + "|y#{program}|n|; - Create or update Makefile\n"
+  syntax << "|y#{program} ?|n|; - View this help information\n"
+  syntax << "|y#{program} new <name>|n|; - Create new application\n"
   @available_apps.sort.each do |app|
     data = String.new
     begin
@@ -231,6 +302,7 @@ if(need_help == true)
       syntax << "|y#{program} #{app}|n\n"
     end
   end
+  syntax << "\nVersion: |c#{demake_version}|n\n"
   notify(syntax + "\n")
   exit!
 end
@@ -965,9 +1037,14 @@ end
 
 if(@found_application != nil)
   File.open('Makefile', 'w').write(@output)
-  notify("#{@emoji_success} Created file: |y#{@found_application}/Makefile|n |[page facing up]\n\n")
-  if(@suggestion != "")
-    notify("Suggestion: |C#{@suggestion}|n\n")
+  if(@found_application == "new")
+    notify("#{@emoji_success} Created file: |y#{ARGV[1]}/Makefile|n |[page facing up]\n\n")
+    notify("Suggestion: |Ccd #{ARGV[1]} ; make ; make build ; make test|n\n")
+  else
+    notify("#{@emoji_success} Created file: |y#{@found_application}/Makefile|n |[page facing up]\n\n")
+    if(@suggestion != "")
+      notify("Suggestion: |C#{@suggestion}|n\n")
+    end
   end
   Dir.chdir('..')
 else
