@@ -47,16 +47,26 @@ gem install demake
    ```bash
    gem install pipetext
    ```
-3. **Set up environment variables:**
-   Create a `.env` file and add your keys (see `.env.example`).
-
-4. **Change directories, make executable, and execute:**
+3. **Change directories, make executable, and execute:**
    ```bash
    cd demake/bin
    chmod +x demake
    ./demake help
    ```
-   **NOTE: This does not add the demake executable to your path.**
+4. **Add demake to your path for this session:**
+   ```bash
+   PATH=`realpath demake|sed 's/demake$//'`:$PATH
+   ```
+
+   **Optionally add to .bashrc so it is always available:**
+   ```bash
+   echo "export PATH=$PATH" >> ~/.bashrc
+   ```
+5. **Use demake:**
+   ```bash
+   demake new hello
+   cd hello ; make ; make build ; make test
+   ```
 
 ## 📖 Usage
 
