@@ -1,8 +1,8 @@
 Gem::Specification.new do |s|
   s.name        = "demake"
-  s.version     = "0.2.3"
-  s.summary     = "Develop, Decorate and manage Dependencies for C (GNU) Makefiles easily with a Ruby script."
-  s.description = "== Develop, Decorate and manage Dependencies for C (GNU) Makefiles easily with a Ruby script.
+  s.version     = "0.2.4"
+  s.summary     = "Develop, Decorate and manage Dependencies for C (GNU) Makefiles easily with Ruby."
+  s.description = "== Develop, Decorate and manage Dependencies for C (GNU) Makefiles easily with Ruby.
 
   Install using the Ruby Gem:
 
@@ -19,8 +19,6 @@ Gem::Specification.new do |s|
     demake new <name>    - Create new application
     demake example       - Create an example application
     demake oreo          - Create a different sample application
-
-    Version: 0.2.3
 
   To create a new application:
 
