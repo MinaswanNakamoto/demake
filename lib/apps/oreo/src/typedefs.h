@@ -12,7 +12,7 @@
 
 #ifndef TYPEDEFS_H_Minaswan     /* Prevents multiple inclusions */
   #define TYPEDEFS_H_Minaswan
-  #define TYPEDEFS_VERSION      "0.1.0"
+  #define TYPEDEFS_VERSION      "0.1.1"
   #include <stdint.h>
 
   typedef uint8_t b8;           /* Booleans                     */
@@ -21,7 +21,9 @@
   typedef uint64_t b64;
 
   typedef char c8;              /* Characters                   */
+  typedef const char cc8;
   typedef unsigned char uc8;
+  typedef char as8;             /* Auto string                  */
 
   typedef uint8_t u8;           /* Unsigned Numbers             */
   typedef uint16_t u16;
@@ -47,14 +49,14 @@ vim.api.nvim_create_autocmd("FileType", {
     group = "CustomCTypedefs",
     pattern = { "c", "h", "cpp", "hpp" },
     callback = function()
-        vim.cmd([[syntax match CustomTypedef /\<\(b8\|b16\|b32\|b64\|c8\|uc8\|i8\|i16\|i32\|i64\|u8\|u16\|u32\|u64\|f32\|f64\)\>/]])
+        vim.cmd([[syntax match CustomTypedef /\<\(b8\|b16\|b32\|b64\|c8\|cc8\|uc8\|as8\|i8\|i16\|i32\|i64\|u8\|u16\|u32\|u64\|f32\|f64\)\>/]])
         vim.cmd([[highlight CustomTypedef guifg=green ctermfg=green]])
     end,
 })
 
 For nano, add to /usr/share/nano/c.nanorc:
 
-color green "\<(b8|b16|b32|b64|c8|uc8|i8|i16|i32|i64|u8|u16|u32|u64|f32|f64)\>"
+color green "\<(b8|b16|b32|b64|c8|cc8|uc8|as8|i8|i16|i32|i64|u8|u16|u32|u64|f32|f64)\>"
 
 For emacs, it would seem the magic is strong, because it just works. :)
 
