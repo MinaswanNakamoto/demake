@@ -1,6 +1,6 @@
 all :
-        (pushd .. && make build)
+	(pushd .. && make build)
 clean :
-        (pushd .. && make clean)
+	(pushd .. && make clean)
 test :
-        (pushd .. && make test)
+	(pushd .. && make test)
