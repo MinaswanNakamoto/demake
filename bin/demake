@@ -1,12 +1,17 @@
 #!/usr/bin/env ruby
 #
-# demake - Executable script which uses Ruby to generate decorated GNU Makefiles
-#          for multiple related applications.
+# demake
+#
+# Develop, Decorate and manage Dependencies for C (GNU) Makefiles easily with Ruby
 #
 require 'rbconfig'      # Needed by older versions of Ruby
 require 'pipetext'
+@lib_dir = File.join(File.expand_path("../..", __FILE__), "lib")
+@lib_data = File.join(File.expand_path("../..", __FILE__), "lib", "data")
+@lib_apps = File.join(File.expand_path("../..", __FILE__), "lib", "apps")
+load @lib_dir + '/to_plural.rb'
 
-demake_version = "0.2.3"
+demake_version = "0.2.4"
 
 @silent = false
 @compiler = "gcc"
@@ -119,9 +124,6 @@ def notify(string)
   STDERR.puts(@pipe.pipetext(string))
 end
 
-@lib_data = File.join(File.expand_path("../..", __FILE__), "lib", "data")
-@lib_apps = File.join(File.expand_path("../..", __FILE__), "lib", "apps")
-@lib_dir = File.join(File.expand_path("../..", __FILE__), "lib")
 @available_apps = Array.new
 Dir.entries(@lib_apps).each do |e|
   if(e != '.' && e != '..')
@@ -203,6 +205,8 @@ def create_new_application(new_name)
     notify("#{@emoji_success} Created file: |y#{new_name}/demake/settings.rb|n |[page facing up]\n")
     file_open_write_close(new_name + "/demake/license", file_open_read_close(@lib_apps + "/example/demake/license"))
     notify("#{@emoji_success} Created file: |y#{new_name}/demake/license|n |[page facing up]\n")
+    file_open_write_close(new_name + "/demake/auto_bits.rb", file_open_read_close(@lib_apps + "/example/demake/auto_bits.rb"))
+    notify("#{@emoji_success} Created file: |y#{new_name}/demake/auto_bits.rb|n |[page facing up]\n")
     begin
       File.open("#{new_name}/demake/test-target.rb", 'w') do |f|
         f.write("test_targets = <<-END_OF_STRING\n")
@@ -218,9 +222,14 @@ def create_new_application(new_name)
       Dir.mkdir(new_name + "/src")
       notify("#{@emoji_success} Created directory: |g#{new_name}/src|n |[open file folder]\n")
     end
+    file_open_write_close(new_name + "/src/Makefile", file_open_read_close(@lib_apps + "/example/src/Makefile"))
+    notify("#{@emoji_success} Created file: |y#{new_name}/src/Makefile|n |[page facing up]\n")
     file_open_write_close(new_name + "/src/typedefs.h", file_open_read_close(@lib_data + "/libsrc/typedefs.h"))
+    notify("#{@emoji_success} Created file: |y#{new_name}/src/typedefs.h|n |[page facing up]\n")
     file_open_write_close(new_name + "/src/defines.h", file_open_read_close(@lib_data + "/libsrc/defines.h"))
+    notify("#{@emoji_success} Created file: |y#{new_name}/src/defines.h|n |[page facing up]\n")
     file_open_write_close(new_name + "/src/base.h", file_open_read_close(@lib_data + "/libsrc/base.h"))
+    notify("#{@emoji_success} Created file: |y#{new_name}/src/base.h|n |[page facing up]\n")
     begin
       File.open("#{new_name}/src/#{new_name}.c", 'w') do |f|
         f.write("/*\n\n  #{new_name}.c - #{new_name} main application entry point\n\n*/\n\n" +
@@ -239,6 +248,16 @@ def create_new_application(new_name)
   end
 end
 
+@auto_bits = Hash.new
+def auto_bits_add(prefix, list, file=nil)
+  @auto_bits[prefix] = { 'prefix' => prefix, 'list' => list, 'file' => file }
+end
+
+@auto_list = Hash.new
+def auto_list_add(prefix, list, file=nil)
+  @auto_list[prefix] = { 'prefix' => prefix, 'list' => list, 'file' => file }
+end
+
 @found_application = nil
 @suggestion = String.new
 
@@ -251,6 +270,176 @@ if(ARGV[0] =~ /^new/)
   create_new_application(ARGV[1])
   Dir.chdir(ARGV[1])
   @working_directory = Dir.pwd
+elsif(ARGV[0] =~ /^auto_bits/ || ARGV[0] =~ /^auto-bits/ || ARGV[0] =~ /^auto_list/ || ARGV[0] =~ /^auto-list/)
+  if(ARGV[0] =~ /^auto_bits/ || ARGV[0] =~ /^auto-bits/)
+    auto_bits = true
+  elsif(ARGV[0] =~ /^auto_list/ || ARGV[0] =~ /^auto-list/)
+    auto_list = true
+  end
+  begin
+    if(ARGV[1] != nil)
+      code = file_open_read_close(ARGV[1])
+    else
+      if(auto_bits)
+        code = file_open_read_close('demake/auto_bits.rb')
+      elsif(auto_list)
+        code = file_open_read_close('demake/auto_list.rb')
+      end
+    end
+    if(@emojis == false)
+      strip_emojis!(code)
+    end
+    eval code
+  rescue Errno::ENOENT
+    if(auto_bits)
+      notify("\n#{@emoji_fail}|RError|n: |Ydemake/auto_bits.rb|n or |Yadditional argument|n |Rrequired|n.\n\n")
+    elsif(auto_list)
+      notify("\n#{@emoji_fail}|RError|n: |Ydemake/auto_list.rb|n or |Yadditional argument|n |Rrequired|n.\n\n")
+    end
+    exit!
+  rescue
+    notify("\n#{@emoji_fail}|RError|n: #{$!}\n\n")
+    exit!
+  end
+  if(@auto_bits == {} && auto_bits)
+    notify("\n#{@emoji_fail}|RError|n: No auto_bits.rb configurations found.\n\n")
+    exit!
+  end
+  if(@auto_list == {} && auto_list)
+    notify("\n#{@emoji_fail}|RError|n: No auto_list.rb configurations found.\n\n")
+    exit!
+  end
+  if(!defined?(@prespace))
+    @prespace = 0
+  end
+  if(!defined?(@target_tab_column))
+    @target_tab_column = 5
+  end
+  @text = String.new
+  @spaces = " " * @prespace
+  @auto_bits.each do |bits|
+    bits[1]['list'].each_with_index do |entry, index|
+      text = @spaces + "#define #{bits[1]['prefix'].upcase.gsub(' ', '_')}_"
+      text << entry.upcase.gsub(' ', '_')
+      text << "\t" * [1, @target_tab_column - (text.length / 8).floor].max
+      text << "(1 << #{index})\n"
+      @text << text
+    end
+    text = @spaces + "#define NUM_#{to_plural(bits[1]['prefix']).upcase.gsub(' ', '_')}"
+    text << "\t" * [1, @target_tab_column - (text.length / 8).floor].max
+    text << bits[1]['list'].count.to_s + "\n"
+    @text << "\n" + text
+    @text << "\n" + @spaces + "cc8 #{to_plural(bits[1]['prefix']).gsub(' ', '_')}_list[] = {\n"
+    bits[1]['list'].each do |entry|
+      text = @spaces + "  \"#{entry}\",\n"
+      @text << text
+    end
+    @text << @spaces + "  NULL\n"
+    @text << @spaces + "};\n\n"
+    if(bits[1]['file'] == nil)
+      file_name = "auto_bits_generated.h"
+    else
+      file_name = bits[1]['file']
+    end
+    same_file = false
+    @auto_bits.each do |bits2|
+      if(bits == bits2)
+        break
+      elsif(bits[1]['file'] == bits2[1]['file'])
+        same_file = true
+        break
+      elsif(bits[1]['file'] == nil && bits2[1]['file'] == file_name)
+        same_file = true
+        break
+      end
+    end
+    if(same_file == true)         # Append
+      File.open(file_name, "a") do |file|
+        file.puts(@text)
+      end
+    else                          # New File
+output = <<-END_OF_STRING
+/*
+
+   This file automatically generated by Ruby Gem - demake #{demake_version}
+
+*/
+
+#ifndef NULL
+  #define NULL                          ((void *) 0)
+#endif
+
+END_OF_STRING
+      File.open(file_name, "w") do |file|
+        file.puts(output)
+        file.puts(@text)
+      end
+      notify("#{@emoji_success} Created file: |y#{file_name}|n |[page facing up]\n\n")
+    end
+    @text = String.new
+  end
+  @auto_list.each do |list|
+    list[1]['list'].each_with_index do |entry, index|
+      text = @spaces + "#define #{list[1]['prefix'].upcase.gsub(' ', '_')}_"
+      text << entry.upcase.gsub(' ', '_')
+      text << "\t" * [1, @target_tab_column - (text.length / 8).floor].max
+      text << "#{index}\n"
+      @text << text
+    end
+    text = @spaces + "#define NUM_#{to_plural(list[1]['prefix']).upcase.gsub(' ', '_')}"
+    text << "\t" * [1, @target_tab_column - (text.length / 8).floor].max
+    text << list[1]['list'].count.to_s + "\n"
+    @text << "\n" + text
+    @text << "\n" + @spaces + "cc8 #{to_plural(list[1]['prefix']).gsub(' ', '_')}_list[] = {\n"
+    list[1]['list'].each do |entry|
+      text = @spaces + "  \"#{entry}\",\n"
+      @text << text
+    end
+    @text << @spaces + "  NULL\n"
+    @text << @spaces + "};\n\n"
+    if(list[1]['file'] == nil)
+      file_name = "auto_list_generated.h"
+    else
+      file_name = list[1]['file']
+    end
+    same_file = false
+    @auto_list.each do |list2|
+      if(list == list2)
+        break
+      elsif(list[1]['file'] == list2[1]['file'])
+        same_file = true
+        break
+      elsif(list[1]['file'] == nil && list2[1]['file'] == file_name)
+        same_file = true
+        break
+      end
+    end
+    if(same_file == true)         # Append
+      File.open(file_name, "a") do |file|
+        file.puts(@text)
+      end
+    else                          # New File
+output = <<-END_OF_STRING
+/*
+
+   This file automatically generated by Ruby Gem - demake #{demake_version}
+
+*/
+
+#ifndef NULL
+  #define NULL                          ((void *) 0)
+#endif
+
+END_OF_STRING
+      File.open(file_name, "w") do |file|
+        file.puts(output)
+        file.puts(@text)
+      end
+      notify("#{@emoji_success} Created file: |y#{file_name}|n |[page facing up]\n\n")
+    end
+    @text = String.new
+  end
+  exit!
 else
   @available_apps.sort.each do |app|
     if(ARGV[0] =~ /^#{app}$/)
@@ -288,6 +477,8 @@ if(need_help == true)
   syntax = "|]#{COLUMN_WIDTH}Command syntax:\n\n" + "|y#{program}|n|; - Create or update Makefile\n"
   syntax << "|y#{program} ?|n|; - View this help information\n"
   syntax << "|y#{program} new <name>|n|; - Create new application\n"
+  syntax << "|y#{program} auto_bits|n|; - Generate auto_bits code\n"
+  syntax << "|y#{program} auto_list|n|; - Generate auto_list code\n"
   @available_apps.sort.each do |app|
     data = String.new
     begin
