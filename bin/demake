@@ -207,6 +207,8 @@ def create_new_application(new_name)
     notify("#{@emoji_success} Created file: |y#{new_name}/demake/license|n |[page facing up]\n")
     file_open_write_close(new_name + "/demake/auto_bits.rb", file_open_read_close(@lib_apps + "/example/demake/auto_bits.rb"))
     notify("#{@emoji_success} Created file: |y#{new_name}/demake/auto_bits.rb|n |[page facing up]\n")
+    file_open_write_close(new_name + "/demake/auto_list.rb", file_open_read_close(@lib_apps + "/example/demake/auto_list.rb"))
+    notify("#{@emoji_success} Created file: |y#{new_name}/demake/auto_list.rb|n |[page facing up]\n")
     begin
       File.open("#{new_name}/demake/test-target.rb", 'w') do |f|
         f.write("test_targets = <<-END_OF_STRING\n")
